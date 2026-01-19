@@ -1,4 +1,3 @@
-import { supabase } from '../lib/supabase';
 import { apiClient, ApiResponse } from '../utils/apiClient';
 import { parseCSV } from '../utils/csvParser';
 import { API_ENDPOINTS, buildUrl } from '../config/api';
@@ -51,28 +50,6 @@ class ApiService {
       };
 
       this.sessionHistory = [{ ...this.sessionData }];
-
-      if (supabase) {
-        const { error } = await supabase
-          .from('ml_sessions')
-          .insert({
-            session_id: this.currentSessionId,
-            data: this.sessionData,
-            created_at: new Date().toISOString(),
-          });
-
-        if (error) {
-          if (error.code === '54000' || error.message?.includes('quota') || error.message?.includes('limit')) {
-            return {
-              error: getErrorMessage('storageLimit')
-            };
-          }
-
-          return {
-            error: getErrorMessage('general')
-          };
-        }
-      }
 
       return { data: this.sessionData };
     } catch (error: any) {
