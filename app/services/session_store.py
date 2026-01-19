@@ -22,8 +22,9 @@ class SessionStore:
     self._sessions: Dict[str, SessionState] = {}
     self._current_session_id: Optional[str] = None
 
-  def create_session(self, df: pd.DataFrame) -> SessionState:
-    session_id = str(uuid.uuid4())
+  def create_session(self, df: pd.DataFrame, session_id: Optional[str] = None) -> SessionState:
+    if session_id is None:
+      session_id = str(uuid.uuid4())
     state = SessionState(session_id=session_id, df=df.copy(), history=[df.copy()])
     self._sessions[session_id] = state
     self._current_session_id = session_id

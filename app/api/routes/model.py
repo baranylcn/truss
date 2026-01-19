@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from ...services.session_store import session_store
 from ...services.ml_pipeline import train_model_for_current_session
@@ -10,12 +12,17 @@ from ...schemas.model import (
   OptimizeResponse,
   PredictRequest,
 )
+from ...services.db import get_db
+from ...services.models import MLSessions, MLTrainedModels
 
 router = APIRouter(prefix="/model", tags=["model"])
 
 
 @router.post("/train", response_model=TrainResponse)
-async def train_model(body: TrainRequest):
+async def train_model(
+  body: TrainRequest,
+  db: AsyncSession = Depends(get_db),
+):
   try:
     state, metrics = train_model_for_current_session(
       model_type=body.model_type,
@@ -26,6 +33,23 @@ async def train_model(body: TrainRequest):
     raise HTTPException(status_code=404, detail="No active session")
   except Exception as e:
     raise HTTPException(status_code=400, detail=f"Training failed: {e}")
+
+  result = await db.execute(
+    select(MLSessions).where(MLSessions.session_id == state.session_id)
+  )
+  session_row = result.scalar_one_or_none()
+
+  if session_row is not None:
+    model_row = MLTrainedModels(
+      session_id=session_row.id,
+      model_type=body.model_type,
+      target_column=body.target_column,
+      metrics=metrics,
+      parameters={},
+      model_path=None,
+    )
+    db.add(model_row)
+    await db.commit()
 
   return {
     "success": True,
