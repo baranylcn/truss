@@ -128,24 +128,25 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
     setIsProcessingGlobal(true);
     try {
       await ensureSnapshot();
-      
-      // Backend'e strategy'yi "method" olarak gönder
-      // Numeric için strategy, categorical için catStrategy'yi seç
+
       let methodToUse = strategy;
       if (strategy === 'ffill' || strategy === 'bfill') {
-        methodToUse = 'mean'; // Backend fallback
+        methodToUse = 'mean';
       }
       
       const response = await apiService.handleMissingValues({
         method: methodToUse,
-        columns: undefined // undefined = all columns
+        columns: []
       });
       
       if (response.error) {
+        console.error('Global missing values error:', response.error);
         toast.error(response.error);
         return;
       }
-      if (response.data) {
+      if (response.data && response.data.missing_values !== undefined) {
+        console.log('Response data:', response.data);
+        console.log('Missing values:', response.data.missing_values);
         const updated: ProcessedData = {
           data: response.data.data,
           columns: response.data.columns,
@@ -153,25 +154,31 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
           dtypes: processedData.dtypes || {},
           missingValues: response.data.missing_values
         };
+        console.log('Updated data:', updated);
         onDataUpdate(updated);
         setMissingInfo(response.data.missing_values);
+        console.log('State updated - missingInfo set to:', response.data.missing_values);
         toast.success('Global missing values handling applied');
+      } else {
+        console.error('Invalid response format:', response);
+        toast.error('Invalid response from server');
       }
-    } catch {
+    } catch (error) {
+      console.error('Failed to handle global missing values:', error);
       toast.error('Failed to handle global missing values');
     } finally {
       setIsProcessingGlobal(false);
     }
   };
 
-  // 3) COLUMN-SPECIFIC APPLY - loop per column
+
   const handleColumnSpecificApply = async () => {
     if (!processedData || columnSpecificSettings.length === 0) return;
     setIsProcessingColumn(true);
     try {
       await ensureSnapshot();
       
-      // Her column için ayrı API çağrısı yap
+
       for (const setting of columnSpecificSettings) {
         const methodToUse = setting.strategy === 'ffill' || setting.strategy === 'bfill' 
           ? 'mean' 
@@ -183,12 +190,12 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
         });
         
         if (response.error) {
+          console.error(`Column-specific error for ${setting.column}:`, response.error);
           toast.error(`Failed for column ${setting.column}: ${response.error}`);
           continue;
         }
-        
-        // Her çağrıdan sonra sessionData update et (UI için)
-        if (response.data) {
+
+        if (response.data && response.data.missing_values !== undefined) {
           onDataUpdate({
             data: response.data.data,
             columns: response.data.columns,
@@ -197,11 +204,14 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
             missingValues: response.data.missing_values
           });
           setMissingInfo(response.data.missing_values);
+        } else {
+          console.error('Invalid response format for column:', setting.column, response);
         }
       }
       
       toast.success('Column-specific settings applied');
-    } catch {
+    } catch (error) {
+      console.error('Failed to handle column-specific missing values:', error);
       toast.error('Failed to handle column-specific missing values');
     } finally {
       setIsProcessingColumn(false);
@@ -236,18 +246,34 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
   const addColumnSetting = () => {
     const avail = getAvailableColumns();
     if (avail.length) {
+      const selectedCol = avail[0];
+      const isNumeric = processedData?.dtypes[selectedCol]?.includes('int') || 
+                       processedData?.dtypes[selectedCol]?.includes('float');
+      const defaultStrategy = isNumeric ? 'mean' : 'mode';
+      
       setColumnSpecificSettings(prev => [
         ...prev,
-        { column: avail[0], strategy: 'mean', fillValue: 'unknown' }
+        { column: selectedCol, strategy: defaultStrategy, fillValue: 'unknown' }
       ]);
     }
-  };
+  }
   const removeColumnSetting = (i: number) =>
     setColumnSpecificSettings(prev => prev.filter((_, idx) => idx !== i));
-  const updateColumnSetting = (i: number, f: keyof ColumnSpecificSetting, v: string) =>
+  const updateColumnSetting = (i: number, f: keyof ColumnSpecificSetting, v: string) => {
     setColumnSpecificSettings(prev =>
-      prev.map((s, idx) => (idx === i ? { ...s, [f]: v } : s))
+      prev.map((s, idx) => {
+        if (idx !== i) return s;
+        
+        if (f === 'column') {
+          const isNumeric = processedData?.dtypes[v]?.includes('int') || processedData?.dtypes[v]?.includes('float');
+          const defaultStrategy = isNumeric ? 'mean' : 'mode';
+          return { ...s, [f]: v, strategy: defaultStrategy, fillValue: 'unknown' };
+        }
+        
+        return { ...s, [f]: v };
+      })
     );
+  };
 
   const totalMissing = Object.values(missingInfo).reduce((sum, v) => sum + v, 0);
   const columnsWithMissing = Object.values(missingInfo).filter(v => v > 0).length;

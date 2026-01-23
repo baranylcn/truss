@@ -39,12 +39,24 @@ class ApiService {
       const text = await file.text();
       const parsed = parseCSV(text);
 
+      const dtypes: Record<string, string> = {};
+      parsed.columns.forEach((col: string, idx: number) => {
+        const columnValues = parsed.data.map((row: any[]) => row[idx]).filter((v: any) => v !== null);
+        if (columnValues.length === 0) {
+          dtypes[col] = 'object';
+        } else {
+          const allNumeric = columnValues.every((v: any) => typeof v === 'number');
+          dtypes[col] = allNumeric ? 'float64' : 'object';
+        }
+      });
+
       this.currentSessionId = `session-${Date.now()}`;
       this.sessionData = {
         data: parsed.data,
         columns: parsed.columns,
         shape: parsed.shape,
         missing_values: parsed.missingValues,
+        dtypes: dtypes,
         session_id: this.currentSessionId,
       };
 
@@ -133,7 +145,21 @@ class ApiService {
 
   async analyzeDataset(params?: { target?: string }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.DATASET.ANALYZE, params ?? {});
+      const response = await apiClient.post(API_ENDPOINTS.DATASET.ANALYZE, params ?? {});
+      if (response.error) return response;
+
+      const backendData = response.data as any;
+      const datasetInfo = backendData?.dataset_info || backendData;
+      return {
+        data: {
+          analysis: backendData?.analysis,
+          dataset_info: datasetInfo,
+          missing_values: datasetInfo?.missing_values,
+          data: datasetInfo?.data,
+          columns: datasetInfo?.columns,
+          shape: datasetInfo?.shape,
+        }
+      };
     }
 
     try {
@@ -183,7 +209,13 @@ class ApiService {
         }
       });
 
-      return { data: { analysis, dataset_info: this.sessionData } };
+      const missing_values: Record<string, number> = {};
+      columns.forEach((col: string, idx: number) => {
+        const nullCount = data.filter((row: any[]) => row[idx] === null).length;
+        missing_values[col] = nullCount;
+      });
+
+      return { data: { ...this.sessionData, analysis, missing_values } };
     } catch (error: any) {
       return { error: error.message || 'Analysis failed' };
     }
@@ -191,15 +223,24 @@ class ApiService {
 
   async handleMissingValues(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.MISSING_VALUES, params);
+      const backendParams = {
+        method: params.method,
+        columns: params.columns && params.columns.length > 0 ? params.columns : []
+      };
+      console.log('Sending to backend:', backendParams);
+      const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.MISSING_VALUES, backendParams);
+      console.log('Backend response:', response);
+      return response;
     }
 
     try {
       if (!this.sessionData) {
         return { error: 'No session data available' };
       }
-      const { method, columns: targetCols } = params;
+      const { method, columns: paramCols } = params;
       const { data, columns } = this.sessionData;
+      
+      const targetCols = (paramCols && paramCols.length > 0) ? paramCols : undefined;
 
       const newData = data.map((row: any[]) => {
         return row.map((val: any, idx: number) => {
@@ -238,13 +279,19 @@ class ApiService {
         ? newData.filter((row: any[]) => !row.some((v: any) => v === null))
         : newData;
 
+      const missing_values: Record<string, number> = {};
+      columns.forEach((col: string, idx: number) => {
+        const nullCount = filteredData.filter((row: any[]) => row[idx] === null).length;
+        missing_values[col] = nullCount;
+      });
+
       this.sessionData = {
         ...this.sessionData,
         data: filteredData,
         shape: [filteredData.length, columns.length] as [number, number],
       };
 
-      return { data: this.sessionData };
+      return { data: { ...this.sessionData, missing_values } };
     } catch (error: any) {
       return { error: error.message || 'Failed to handle missing values' };
     }
@@ -437,8 +484,6 @@ class ApiService {
     problem_type?: string;
   }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      // Backend accepts TrainRequest: model_type, target_column, test_size
-      // If model_names provided, train first one; otherwise use model_type
       const modelType = params.model_type || params.model_names?.[0] || 'random_forest';
       return apiClient.post(API_ENDPOINTS.MODEL.TRAIN, {
         model_type: modelType,

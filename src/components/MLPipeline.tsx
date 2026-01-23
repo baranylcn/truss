@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { apiService } from '../services/api';
@@ -45,6 +45,7 @@ export const MLPipeline: React.FC<MLPipelineProps> = ({
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [currentData, setCurrentData] = useState<any[][]>([]);
   const [columns, setColumns] = useState<string[]>([]);
+  const [dtypes, setDtypes] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [stepResults, setStepResults] = useState<Record<number, any>>({});
   const [sessionId, setSessionId] = useState<string>('');
@@ -70,6 +71,7 @@ export const MLPipeline: React.FC<MLPipelineProps> = ({
       setCurrentStep(initialSessionData.currentStep || 1);
       setCurrentData(initialSessionData.currentData || []);
       setColumns(initialSessionData.columns || []);
+      setDtypes(initialSessionData.dtypes || {});
       setAnalysisResults(initialSessionData.analysisResults || null);
       setStepResults(initialSessionData.stepResults || {});
       setUploadedFile(initialSessionData.uploadedFile || null);
@@ -84,13 +86,14 @@ export const MLPipeline: React.FC<MLPipelineProps> = ({
         currentStep,
         currentData,
         columns,
+        dtypes,
         analysisResults,
         stepResults,
         uploadedFile,
         sessionId
       });
     }
-  }, [currentStep, analysisResults, stepResults, uploadedFile, sessionId]);
+  }, [currentStep, analysisResults, stepResults, uploadedFile, sessionId, dtypes]);
 
   const updateSteps = (stepId: number, completed: boolean = false) => {
     setMlSteps(prev =>
@@ -115,6 +118,7 @@ export const MLPipeline: React.FC<MLPipelineProps> = ({
         setColumns(res.data.columns);
         setCurrentData(res.data.data);
         setMissingValues(res.data.missing_values);
+        setDtypes(res.data.dtypes || {});
         setSessionId(res.data.session_id);
         updateSteps(1, true);
         setCurrentStep(2);
@@ -144,6 +148,7 @@ export const MLPipeline: React.FC<MLPipelineProps> = ({
     if (newData.columns) setColumns(newData.columns);
     if (newData.data) setCurrentData(newData.data);
     if (newData.missingValues) setMissingValues(newData.missingValues);
+    if (newData.dtypes) setDtypes(newData.dtypes);
   };
 
   const handleStepClick = (stepId: number) => {
@@ -153,14 +158,15 @@ export const MLPipeline: React.FC<MLPipelineProps> = ({
     }
   };
 
+  const processedData: ProcessedData = useMemo(() => ({
+    data: currentData,
+    columns,
+    shape: [currentData.length, columns.length] as [number, number],
+    dtypes,
+    missingValues
+  }), [currentData, columns, dtypes, missingValues]);
+
   const renderStepContent = () => {
-    const processedData: ProcessedData = {
-      data: currentData,
-      columns,
-      shape: [currentData.length, columns.length],
-      dtypes: {},
-      missingValues
-    };
     const commonProps = {
       processedData,
       onDataUpdate: handleDataUpdate,
