@@ -110,7 +110,6 @@ export const OutlierHandlingStep: React.FC<Props> = ({
       setIsDetecting(true);
 
       try {
-        // Backend sadece method + columns kabul ediyor
         const columnsToDetect = columnDetectConfigs.length > 0 
           ? columnDetectConfigs.map((c: any) => c.column)
           : undefined;
@@ -210,7 +209,7 @@ export const OutlierHandlingStep: React.FC<Props> = ({
       await ensureSnapshot();
       const resp = await apiService.removeOutliers({
         method: globalMethod,
-        columns: undefined // all numeric columns
+        columns: []
       });
       if (resp.error) {
         toast.error(`Remove failed: ${resp.error}`);
@@ -237,7 +236,6 @@ export const OutlierHandlingStep: React.FC<Props> = ({
     try {
       await ensureSnapshot();
       
-      // Her column için ayrı API çağrısı yap
       for (const col of columnRemoveConfigs) {
         const resp = await apiService.removeOutliers({
           method: col.method,
@@ -249,7 +247,6 @@ export const OutlierHandlingStep: React.FC<Props> = ({
           continue;
         }
         
-        // Her çağrıdan sonra update et
         if (resp.data) {
           const d = resp.data as any;
           onDataUpdate({

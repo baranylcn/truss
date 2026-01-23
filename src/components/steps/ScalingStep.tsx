@@ -129,7 +129,7 @@ export const ScalingStep: React.FC<ScalingStepProps> = ({
 
       const response = await apiService.scaleFeatures({
         method,
-        target_column: targetColumn || undefined,
+        columns: []
       });
 
       if (response.error) {
@@ -161,13 +161,13 @@ export const ScalingStep: React.FC<ScalingStepProps> = ({
     try {
       await ensureSnapshot();
 
-      const mapping: Record<string, string> = Object.fromEntries(
-        columnSpecificSettings.map((s) => [s.column, s.method])
-      );
+      const columnsToScale = columnSpecificSettings.map(s => s.column);
+
+      const selectedMethod = columnSpecificSettings[0]?.method || 'standard';
 
       const response = await apiService.scaleFeatures({
-        column_specific_settings: mapping,
-        target_column: targetColumn || undefined,
+        method: selectedMethod,
+        columns: columnsToScale
       });
 
       if (response.error) {

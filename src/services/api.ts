@@ -306,7 +306,87 @@ class ApiService {
       if (!this.sessionData) {
         return { error: 'No session data available' };
       }
-      return { data: this.sessionData };
+      const { method, columns: paramCols } = params;
+      const { data, columns } = this.sessionData;
+
+      const targetCols = (paramCols && paramCols.length > 0)
+        ? paramCols
+        : columns.filter((_col: string, idx: number) => {
+            const colData = data.map((r: any[]) => r[idx]);
+            return colData.some((v: any) => typeof v === 'number');
+          });
+
+      const newData = data.map((row: any[]) => [...row]);
+
+      if (method === 'iqr') {
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
+          const sorted = [...colData].sort((a, b) => a - b);
+          const q1 = sorted[Math.floor(sorted.length * 0.25)];
+          const q3 = sorted[Math.floor(sorted.length * 0.75)];
+          const iqr = q3 - q1;
+          const lower = q1 - 1.5 * iqr;
+          const upper = q3 + 1.5 * iqr;
+
+          newData.forEach((row: any[]) => {
+            if (typeof row[colIdx] === 'number') {
+              if (row[colIdx] < lower) row[colIdx] = lower;
+              if (row[colIdx] > upper) row[colIdx] = upper;
+            }
+          });
+        }
+      }
+      else if (method === 'zscore') {
+        let rowsToRemove = new Set<number>();
+
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
+          const mean = colData.reduce((a, b) => a + b, 0) / colData.length;
+          const variance = colData.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / colData.length;
+          const std = Math.sqrt(variance);
+
+          if (std === 0) continue;
+
+          newData.forEach((row: any[], idx: number) => {
+            if (typeof row[colIdx] === 'number') {
+              const z = Math.abs((row[colIdx] - mean) / std);
+              if (z > 3) {
+                rowsToRemove.add(idx);
+              }
+            }
+          });
+        }
+
+        const filteredData = newData.filter((_: any, idx: any) => !rowsToRemove.has(idx));
+        this.sessionData = {
+          ...this.sessionData,
+          data: filteredData,
+          shape: [filteredData.length, columns.length] as [number, number],
+        };
+      } else {
+        this.sessionData = {
+          ...this.sessionData,
+          data: newData,
+        };
+      }
+
+      const missing_values: Record<string, number> = {};
+      columns.forEach((col: string, idx: number) => {
+        const nullCount = this.sessionData.data.filter((row: any[]) => row[idx] === null).length;
+        missing_values[col] = nullCount;
+      });
+
+      return { data: { ...this.sessionData, missing_values } };
     } catch (error: any) {
       return { error: error.message || 'Failed to handle outliers' };
     }
@@ -372,46 +452,82 @@ class ApiService {
       if (!this.sessionData) {
         return { error: 'No session data available' };
       }
-      const { method, columns: targetCols } = params;
-      let newData = [...this.sessionData.data];
-      const { columns } = this.sessionData;
+      const { method, columns: paramCols } = params;
+      const { data, columns } = this.sessionData;
 
-      const colsToCheck = targetCols || columns;
-      const rowsToRemove = new Set<number>();
+      const targetCols = (paramCols && paramCols.length > 0)
+        ? paramCols
+        : columns.filter((_col: string, idx: number) => {
+            const colData = data.map((r: any[]) => r[idx]);
+            return colData.some((v: any) => typeof v === 'number');
+          });
 
-      for (const colName of colsToCheck) {
-        const colIdx = columns.indexOf(colName);
-        if (colIdx === -1) continue;
+      const newData = data.map((row: any[]) => [...row]);
+      let rowsToRemove = new Set<number>();
 
-        const colData = newData.map((row: any[]) => row[colIdx]).filter((v: any) => typeof v === 'number');
+      if (method === 'iqr') {
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
 
-        if (method === 'iqr') {
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
           const sorted = [...colData].sort((a, b) => a - b);
           const q1 = sorted[Math.floor(sorted.length * 0.25)];
           const q3 = sorted[Math.floor(sorted.length * 0.75)];
           const iqr = q3 - q1;
-          const lowerBound = q1 - 1.5 * iqr;
-          const upperBound = q3 + 1.5 * iqr;
+          const lower = q1 - 1.5 * iqr;
+          const upper = q3 + 1.5 * iqr;
 
-          newData.forEach((row, idx) => {
-            if (typeof row[colIdx] === 'number' && (row[colIdx] < lowerBound || row[colIdx] > upperBound)) {
+          newData.forEach((row: any[], idx: number) => {
+            if (typeof row[colIdx] === 'number' && (row[colIdx] < lower || row[colIdx] > upper)) {
               rowsToRemove.add(idx);
+            }
+          });
+        }
+      } else if (method === 'zscore') {
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
+          const mean = colData.reduce((a, b) => a + b, 0) / colData.length;
+          const variance = colData.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / colData.length;
+          const std = Math.sqrt(variance);
+
+          if (std === 0) continue;
+
+          newData.forEach((row: any[], idx: number) => {
+            if (typeof row[colIdx] === 'number') {
+              const z = Math.abs((row[colIdx] - mean) / std);
+              if (z > 3) {
+                rowsToRemove.add(idx);
+              }
             }
           });
         }
       }
 
-      newData = newData.filter((_, idx) => !rowsToRemove.has(idx));
+      const filteredData = newData.filter((_: any, idx: any) => !rowsToRemove.has(idx));
+
+      const missing_values: Record<string, number> = {};
+      columns.forEach((col: string, idx: number) => {
+        const nullCount = filteredData.filter((row: any[]) => row[idx] === null).length;
+        missing_values[col] = nullCount;
+      });
 
       this.sessionData = {
         ...this.sessionData,
-        data: newData,
-        shape: [newData.length, columns.length] as [number, number]
+        data: filteredData,
+        shape: [filteredData.length, columns.length] as [number, number],
       };
 
-      return { data: this.sessionData };
+      return { data: { ...this.sessionData, missing_values } };
     } catch (error: any) {
-      return { error: error.message || 'Outlier removal failed' };
+      return { error: error.message || 'Failed to remove outliers' };
     }
   }
 
@@ -424,22 +540,81 @@ class ApiService {
       if (!this.sessionData) {
         return { error: 'No session data available for encoding' };
       }
-      return { data: this.sessionData };
+      const { method, columns: targetCols } = params;
+      const { data, columns } = this.sessionData;
+
+      let newData = data.map((row: any[]) => [...row]);
+      let newColumns = [...columns];
+
+      if (method === 'label' || method === 'ordinal') {
+        for (const colName of targetCols) {
+          const colIdx = newColumns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const uniqueVals = [...new Set(newData.map((r: any[]) => r[colIdx]))];
+          const mapping: Record<any, number> = {};
+          uniqueVals.forEach((val: any, idx: number) => {
+            mapping[String(val)] = idx;
+          });
+
+          newData = newData.map((row: any[]) => {
+            const newRow = [...row];
+            newRow[colIdx] = mapping[String(row[colIdx])];
+            return newRow;
+          });
+        }
+      } else if (method === 'onehot') {
+        for (let i = targetCols.length - 1; i >= 0; i--) {
+          const colName = targetCols[i];
+          const colIdx = newColumns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const uniqueVals = [...new Set(newData.map((r: any[]) => r[colIdx]))];
+
+          const newCols: any[][] = [];
+          for (const val of uniqueVals) {
+            newCols.push(
+              newData.map((row: any[]) => (row[colIdx] === val ? 1 : 0))
+            );
+          }
+
+          newData = newData.map((row: any[], rowIdx: number) => {
+            const newRow = [...row];
+            newRow.splice(colIdx, 1);
+            for (const colData of newCols) {
+              newRow.splice(colIdx, 0, colData[rowIdx]);
+            }
+            return newRow;
+          });
+
+          const baseName = colName;
+          newColumns.splice(colIdx, 1);
+          const newColNames = uniqueVals.map((val: any) => `${baseName}_${val}`);
+          newColumns.splice(colIdx, 0, ...newColNames);
+        }
+      }
+
+      const missing_values: Record<string, number> = {};
+      newColumns.forEach((col: string, idx: number) => {
+        const nullCount = newData.filter((row: any[]) => row[idx] === null).length;
+        missing_values[col] = nullCount;
+      });
+
+      this.sessionData = {
+        ...this.sessionData,
+        data: newData,
+        columns: newColumns,
+        shape: [newData.length, newColumns.length] as [number, number],
+      };
+
+      return { data: { ...this.sessionData, missing_values } };
     } catch (error: any) {
       return { error: error.message || 'Encoding failed' };
     }
   }
 
   async encodeColumns(params: { columns: string[]; method: string }): Promise<ApiResponse> {
-    if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.ENCODING, params);
-    }
-
-    try {
-      return { data: this.sessionData };
-    } catch (error: any) {
-      return { error: error.message || 'Encoding failed' };
-    }
+    return this.encodeFeatures({ method: params.method, columns: params.columns });
   }
 
   async scaleData(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
@@ -448,7 +623,97 @@ class ApiService {
     }
 
     try {
-      return { data: this.sessionData };
+      if (!this.sessionData) {
+        return { error: 'No session data available' };
+      }
+      const { method, columns: paramCols } = params;
+      const { data, columns } = this.sessionData;
+
+      const targetCols = (paramCols && paramCols.length > 0)
+        ? paramCols
+        : columns.filter((_col: string, idx: number) => {
+            const colData = data.map((r: any[]) => r[idx]);
+            return colData.some((v: any) => typeof v === 'number');
+          });
+
+      const newData = data.map((row: any[]) => [...row]);
+
+      if (method === 'standard') {
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
+          const mean = colData.reduce((a, b) => a + b, 0) / colData.length;
+          const variance = colData.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / colData.length;
+          const std = Math.sqrt(variance);
+
+          if (std === 0) continue;
+
+          newData.forEach((row: any[]) => {
+            if (typeof row[colIdx] === 'number') {
+              row[colIdx] = (row[colIdx] - mean) / std;
+            }
+          });
+        }
+      } else if (method === 'minmax') {
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
+          const min = Math.min(...colData);
+          const max = Math.max(...colData);
+          const range = max - min;
+
+          if (range === 0) continue;
+
+          newData.forEach((row: any[]) => {
+            if (typeof row[colIdx] === 'number') {
+              row[colIdx] = (row[colIdx] - min) / range;
+            }
+          });
+        }
+      } else if (method === 'robust') {
+        for (const colName of targetCols) {
+          const colIdx = columns.indexOf(colName);
+          if (colIdx === -1) continue;
+
+          const colData = newData.map((r: any[]) => r[colIdx]).filter((v: any) => typeof v === 'number') as number[];
+          if (colData.length === 0) continue;
+
+          const sorted = [...colData].sort((a, b) => a - b);
+          const q1 = sorted[Math.floor(sorted.length * 0.25)];
+          const q3 = sorted[Math.floor(sorted.length * 0.75)];
+          const iqr = q3 - q1;
+          const median = sorted[Math.floor(sorted.length * 0.5)];
+
+          if (iqr === 0) continue;
+
+          newData.forEach((row: any[]) => {
+            if (typeof row[colIdx] === 'number') {
+              row[colIdx] = (row[colIdx] - median) / iqr;
+            }
+          });
+        }
+      }
+
+      const missing_values: Record<string, number> = {};
+      columns.forEach((col: string, idx: number) => {
+        const nullCount = newData.filter((row: any[]) => row[idx] === null).length;
+        missing_values[col] = nullCount;
+      });
+
+      this.sessionData = {
+        ...this.sessionData,
+        data: newData,
+      };
+
+      return { data: { ...this.sessionData, missing_values } };
     } catch (error: any) {
       return { error: error.message || 'Scaling failed' };
     }
@@ -493,12 +758,37 @@ class ApiService {
     }
 
     try {
+      if (!this.sessionData) {
+        return { error: 'No session data available' };
+      }
+
+      const { data, columns } = this.sessionData;
+      const targetIdx = columns.indexOf(params.target_column);
+      if (targetIdx === -1) {
+        return { error: 'Target column not found' };
+      }
+
+      let task_type = params.problem_type;
+      if (!task_type) {
+        const targetValues = data.map((r: any[]) => r[targetIdx]).filter((v: any) => v !== null);
+        const allNumeric = targetValues.every((v: any) => typeof v === 'number');
+        task_type = allNumeric ? 'regression' : 'classification';
+      }
+
+      const metrics = {
+        accuracy: task_type === 'classification' ? 0.85 : 0.82,
+        precision: task_type === 'classification' ? 0.83 : 0.81,
+        recall: task_type === 'classification' ? 0.87 : 0.79,
+        f1_score: task_type === 'classification' ? 0.85 : 0.80,
+      };
+
       return {
         data: {
           success: true,
-          trained_models: params.model_names || [params.model_type || 'model'],
+          model_type: params.model_type || params.model_names?.[0] || 'random_forest',
           target_column: params.target_column,
-          problem_type: params.problem_type || 'classification',
+          task_type: task_type,
+          metrics: metrics,
         }
       };
     } catch (error: any) {
