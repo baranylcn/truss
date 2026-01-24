@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import pandas as pd
 
 from ...services.session_store import session_store
 from ...services.ml_pipeline import (
@@ -87,6 +88,61 @@ async def missing_values(
 
   await _sync_session_to_db(state, db)
   return df_to_session_payload(state)
+
+
+@router.post("/detect-outliers")
+async def detect_outliers(
+  body: OutliersRequest,
+):
+  try:
+    state = session_store.get_current()
+  except KeyError:
+    raise HTTPException(status_code=404, detail="No active session")
+
+  try:
+    target_cols = body.columns or [c for c in state.df.columns if pd.api.types.is_numeric_dtype(state.df[c])]
+  except Exception:
+    target_cols = [c for c in state.df.columns if pd.api.types.is_numeric_dtype(state.df[c])]
+
+  outlier_results = {}
+  
+  for col in target_cols:
+    if not pd.api.types.is_numeric_dtype(state.df[col]):
+      continue
+      
+    df_col = state.df[col].dropna()
+    if df_col.empty:
+      outlier_results[col] = {"count": 0, "values": [], "method": body.method}
+      continue
+    
+    outliers_mask = None
+    
+    if body.method == "iqr":
+      q1 = df_col.quantile(0.25)
+      q3 = df_col.quantile(0.75)
+      iqr = q3 - q1
+      lower = q1 - 1.5 * iqr
+      upper = q3 + 1.5 * iqr
+      outliers_mask = (state.df[col] < lower) | (state.df[col] > upper)
+    elif body.method == "zscore":
+      mean = df_col.mean()
+      std = df_col.std()
+      if std > 0:
+        z = (state.df[col] - mean) / std
+        outliers_mask = z.abs() > 3
+    
+    if outliers_mask is not None:
+      outlier_count = int(outliers_mask.sum())
+      outlier_values = state.df.loc[outliers_mask, col].dropna().astype(float).tolist()
+      outlier_results[col] = {
+        "count": outlier_count,
+        "values": outlier_values[:100],
+        "method": body.method
+      }
+    else:
+      outlier_results[col] = {"count": 0, "values": [], "method": body.method}
+  
+  return {"data": {"outlier_results": outlier_results}}
 
 
 @router.post("/outliers", response_model=PreprocessingResponse)
