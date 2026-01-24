@@ -189,6 +189,10 @@ def train_model_for_current_session(
   test_size: float,
 ) -> Tuple[SessionState, Dict[str, float]]:
   state = session_store.get_current()
+  
+  if target_column not in state.df.columns:
+    raise ValueError(f"Target column '{target_column}' not found in DataFrame")
+  
   df = state.df.dropna(subset=[target_column])
   X = df.drop(columns=[target_column])
   y = df[target_column]

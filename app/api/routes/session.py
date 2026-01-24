@@ -125,6 +125,9 @@ async def update_session(
     if state_loaded is None:
       raise HTTPException(status_code=404, detail="Session not found")
 
+  if not body.data or not body.columns or len(body.data) == 0 or len(body.columns) == 0:
+    raise HTTPException(status_code=400, detail="Invalid data format: data and columns are required and cannot be empty")
+
   df = pd.DataFrame(body.data, columns=body.columns)
   state = session_store.update_df(id, df)
 
@@ -160,6 +163,8 @@ async def snapshot_session(
     "columns": payload["columns"],
     "shape": list(payload["shape"]),
   }
+  snapshot_data = sanitize_for_json(snapshot_data)
+  
   metadata = {
     "step_id": body.step_id,
   }

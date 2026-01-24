@@ -20,14 +20,24 @@ async def upload_dataset(
   file: UploadFile = File(...),
   db: AsyncSession = Depends(get_db),
 ):
+  if not file.filename:
+    raise HTTPException(status_code=400, detail="File name is required")
+    
   if not file.filename.endswith(".csv"):
     raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
   try:
     content = await file.read()
+    if not content:
+      raise HTTPException(status_code=400, detail="File is empty")
     df = pd.read_csv(BytesIO(content))
+  except pd.errors.ParserError as e:
+    raise HTTPException(status_code=400, detail=f"Failed to parse CSV: Invalid format")
   except Exception as e:
-    raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {e}")
+    raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
+
+  if df.empty:
+    raise HTTPException(status_code=400, detail="CSV file contains no data")
 
   state = session_store.create_session(df)
   payload = df_to_session_payload(state)

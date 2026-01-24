@@ -14,6 +14,7 @@ from ...schemas.model import (
 )
 from ...services.db import get_db
 from ...services.models import MLSessions, MLTrainedModels
+from ...utils.json_sanitize import sanitize_for_json
 
 router = APIRouter(prefix="/model", tags=["model"])
 
@@ -40,11 +41,12 @@ async def train_model(
   session_row = result.scalar_one_or_none()
 
   if session_row is not None:
+    sanitized_metrics = sanitize_for_json(metrics)
     model_row = MLTrainedModels(
       session_id=session_row.id,
       model_type=body.model_type,
       target_column=body.target_column,
-      metrics=metrics,
+      metrics=sanitized_metrics,
       parameters={},
       model_path=None,
     )
