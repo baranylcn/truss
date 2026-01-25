@@ -30,9 +30,9 @@ export class ApiClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const fullUrl = `${this.baseUrl}${endpoint}`;
+      const fullUrl = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
       console.log('[API Request]', options.method, fullUrl, options.body);
-      
+
       const response = await fetch(fullUrl, {
         ...options,
         signal: controller.signal,
@@ -115,13 +115,13 @@ export class ApiClient {
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           lastError = errorData.message || `HTTP ${response.status}: ${response.statusText}`;
-          
+
           if (response.status >= 500 && attempt < this.retryAttempts) {
             console.warn(`[Upload] Server error ${response.status}, retrying in ${this.retryDelay}ms...`);
             await this.delay(this.retryDelay);
             continue;
           }
-          
+
           return { error: lastError };
         }
 
@@ -134,7 +134,7 @@ export class ApiClient {
         if (error.name === 'AbortError') {
           lastError = `Upload timeout after ${this.timeout}ms (attempt ${attempt}/${this.retryAttempts})`;
           console.warn(`[Upload] Timeout on attempt ${attempt}, retrying in ${this.retryDelay}ms...`);
-          
+
           if (attempt < this.retryAttempts) {
             await this.delay(this.retryDelay);
             continue;
@@ -142,7 +142,7 @@ export class ApiClient {
         } else {
           lastError = error.message || `Upload failed on attempt ${attempt}`;
           console.error(`[Upload Error] Attempt ${attempt}: ${lastError}`);
-          
+
           if (attempt < this.retryAttempts) {
             console.log(`[Upload] Retrying in ${this.retryDelay}ms...`);
             await this.delay(this.retryDelay);
