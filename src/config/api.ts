@@ -36,7 +36,7 @@ export const API_ENDPOINTS = {
 } as const;
 
 export const buildUrl = (endpoint: string, params?: Record<string, string>): string => {
-  let url = `${API_CONFIG.BASE_URL}${endpoint}`;
+  let url = endpoint.startsWith('http') ? endpoint : `${API_CONFIG.BASE_URL}${endpoint}`;
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
