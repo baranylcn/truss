@@ -82,14 +82,17 @@ async def missing_values(
   except KeyError:
     raise HTTPException(status_code=404, detail="No active session")
 
-  logger.info(f"Missing values request - numerical_method: {body.numerical_method}, categorical_method: {body.categorical_method}, columns: {body.columns}")
+  numerical_method = body.numerical_method or body.method or "mean"
+  categorical_method = body.categorical_method or "mode"
+
+  logger.info(f"Missing values request - numerical_method: {numerical_method}, categorical_method: {categorical_method}, columns: {body.columns}")
 
   if body.columns is not None and len(body.columns) == 0:
     logger.warning("Empty columns array received in missing values request")
     raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
 
   try:
-    df_new = handle_missing_values(state.df, body.numerical_method, body.categorical_method, body.columns)
+    df_new = handle_missing_values(state.df, numerical_method, categorical_method, body.columns)
     logger.info(f"Successfully processed missing values. Original shape: {state.df.shape}, New shape: {df_new.shape}")
   except Exception as e:
     logger.error(f"Missing values handling failed: {str(e)}")
@@ -109,6 +112,10 @@ async def detect_outliers(
     state = session_store.get_current()
   except KeyError:
     raise HTTPException(status_code=404, detail="No active session")
+
+  if body.columns is not None and len(body.columns) == 0:
+    logger.warning("Empty columns array received in detect-outliers request")
+    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
 
   try:
     target_cols = body.columns or [c for c in state.df.columns if pd.api.types.is_numeric_dtype(state.df[c])]
@@ -166,6 +173,10 @@ async def outliers(
   except KeyError:
     raise HTTPException(status_code=404, detail="No active session")
 
+  if body.columns is not None and len(body.columns) == 0:
+    logger.warning("Empty columns array received in outliers request")
+    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+
   logger.info(f"Outliers request - method: {body.method}, columns: {body.columns}")
 
   try:
@@ -222,6 +233,10 @@ async def scaling(
     state = session_store.get_current()
   except KeyError:
     raise HTTPException(status_code=404, detail="No active session")
+
+  if body.columns is not None and len(body.columns) == 0:
+    logger.warning("Empty columns array received in scaling request")
+    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
 
   logger.info(f"Scaling request - method: {body.method}, columns: {body.columns}")
 
