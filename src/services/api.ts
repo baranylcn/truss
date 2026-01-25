@@ -225,26 +225,24 @@ class ApiService {
     }
   }
 
-  async handleMissingValues(params: { 
-    numerical_method?: string; 
-    categorical_method?: string; 
-    method?: string; 
-    columns?: string[] | null 
+  async handleMissingValues(params: {
+    numerical_method?: string;
+    categorical_method?: string;
+    method?: string;
+    columns?: string[] | null
   }): Promise<ApiResponse> {
     if (USE_BACKEND) {
       const backendParams: any = {
         columns: params.columns && params.columns.length > 0 ? params.columns : null
       };
-      
-      // Yeni format: numerical_method ve categorical_method
+
       if (params.numerical_method !== undefined) {
         backendParams.numerical_method = params.numerical_method;
         backendParams.categorical_method = params.categorical_method || 'mode';
       } else if (params.method !== undefined) {
-        // Eski format: method
         backendParams.method = params.method;
       }
-      
+
       console.log('Sending to backend:', backendParams);
       const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.MISSING_VALUES, backendParams);
       console.log('Backend response:', response);
@@ -257,7 +255,7 @@ class ApiService {
       }
       const { method, numerical_method, categorical_method, columns: paramCols } = params;
       const { data, columns } = this.sessionData;
-      
+
       const targetCols = (paramCols && paramCols.length > 0) ? paramCols : undefined;
       const numMethod = numerical_method || method;
       const catMethod = categorical_method || method;
@@ -268,11 +266,8 @@ class ApiService {
           if (val !== null && val !== undefined) return val;
           if (targetCols && !targetCols.includes(col)) return val;
 
-          // Sütun türünü belirle
           const colDtype = this.sessionData.dtypes?.[col] || '';
           const isNumeric = colDtype.includes('int') || colDtype.includes('float') || colDtype.includes('double');
-          
-          // Uygun methodu seç
           const effectiveMethod = isNumeric ? numMethod : catMethod;
 
           if (effectiveMethod === 'drop') {
@@ -326,7 +321,11 @@ class ApiService {
 
   async handleOutliers(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, params);
+      const backendParams = {
+        method: params.method,
+        columns: params.columns && params.columns.length > 0 ? params.columns : null
+      };
+      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, backendParams);
     }
 
     try {
@@ -339,9 +338,9 @@ class ApiService {
       const targetCols = (paramCols && paramCols.length > 0)
         ? paramCols
         : columns.filter((_col: string, idx: number) => {
-            const colData = data.map((r: any[]) => r[idx]);
-            return colData.some((v: any) => typeof v === 'number');
-          });
+          const colData = data.map((r: any[]) => r[idx]);
+          return colData.some((v: any) => typeof v === 'number');
+        });
 
       const newData = data.map((row: any[]) => [...row]);
 
@@ -421,7 +420,11 @@ class ApiService {
 
   async detectOutliers(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, params);
+      const backendParams = {
+        method: params.method,
+        columns: params.columns && params.columns.length > 0 ? params.columns : undefined
+      };
+      return apiClient.post(API_ENDPOINTS.PREPROCESSING.DETECT_OUTLIERS, backendParams);
     }
 
     try {
@@ -472,7 +475,11 @@ class ApiService {
 
   async removeOutliers(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, params);
+      const backendParams = {
+        method: params.method,
+        columns: params.columns && params.columns.length > 0 ? params.columns : null
+      };
+      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, backendParams);
     }
 
     try {
@@ -485,9 +492,9 @@ class ApiService {
       const targetCols = (paramCols && paramCols.length > 0)
         ? paramCols
         : columns.filter((_col: string, idx: number) => {
-            const colData = data.map((r: any[]) => r[idx]);
-            return colData.some((v: any) => typeof v === 'number');
-          });
+          const colData = data.map((r: any[]) => r[idx]);
+          return colData.some((v: any) => typeof v === 'number');
+        });
 
       const newData = data.map((row: any[]) => [...row]);
       let rowsToRemove = new Set<number>();
@@ -574,7 +581,7 @@ class ApiService {
       const { method, columns: targetCols } = params;
       const { data, columns } = this.sessionData;
 
-      const categorialColumns = targetCols || columns.filter((col: string, idx: number) => {
+      const categorialColumns = targetCols || columns.filter((col: string) => {
         const dtype = this.sessionData.dtypes?.[col] || '';
         return !dtype.includes('int') && !dtype.includes('float') && !dtype.includes('double');
       });
@@ -655,7 +662,11 @@ class ApiService {
 
   async scaleData(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.SCALING, params);
+      const backendParams = {
+        method: params.method,
+        columns: params.columns && params.columns.length > 0 ? params.columns : null
+      };
+      return apiClient.post(API_ENDPOINTS.PREPROCESSING.SCALING, backendParams);
     }
 
     try {
@@ -668,9 +679,9 @@ class ApiService {
       const targetCols = (paramCols && paramCols.length > 0)
         ? paramCols
         : columns.filter((_col: string, idx: number) => {
-            const colData = data.map((r: any[]) => r[idx]);
-            return colData.some((v: any) => typeof v === 'number');
-          });
+          const colData = data.map((r: any[]) => r[idx]);
+          return colData.some((v: any) => typeof v === 'number');
+        });
 
       const newData = data.map((row: any[]) => [...row]);
 

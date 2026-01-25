@@ -13,6 +13,7 @@ export const API_ENDPOINTS = {
   },
   PREPROCESSING: {
     MISSING_VALUES: '/preprocessing/missing-values',
+    DETECT_OUTLIERS: '/preprocessing/detect-outliers',
     OUTLIERS: '/preprocessing/outliers',
     ENCODING: '/preprocessing/encoding',
     SCALING: '/preprocessing/scaling',
