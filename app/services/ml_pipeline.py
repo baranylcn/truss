@@ -84,7 +84,13 @@ def analyze_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
 
 
 def handle_missing_values(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
-  target_cols = columns or list(df.columns)
+  # If columns is None, process all columns; if empty list, process none
+  target_cols = list(df.columns) if columns is None else (columns if columns else [])
+  
+  # If no columns to process, return original dataframe
+  if not target_cols:
+    return df
+    
   if method == "drop":
     return df.dropna(subset=target_cols)
 
@@ -111,8 +117,15 @@ def handle_missing_values(df: pd.DataFrame, method: str, columns: List[str] | No
 
 
 def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
-  target_cols = columns or [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+  if columns is None:
+    target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+  else:
+    target_cols = columns if columns else []
+  
   df_new = df.copy()
+  
+  if not target_cols:
+    return df_new
 
   if method == "iqr":
     for col in target_cols:
@@ -152,7 +165,11 @@ def encode_columns(df: pd.DataFrame, method: str, columns: List[str]) -> pd.Data
 
 def scale_columns(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
   df_new = df.copy()
-  target_cols = columns or [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+  if columns is None:
+    target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+  else:
+    target_cols = columns if columns else []
+  
   if not target_cols:
     return df_new
 

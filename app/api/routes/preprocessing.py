@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import pandas as pd
+import logging
 
 from ...services.session_store import session_store
 from ...services.ml_pipeline import (
@@ -23,6 +24,8 @@ from ...schemas.preprocessing import (
 from ...services.db import get_db
 from ...services.models import MLSessions
 from ...utils.json_sanitize import sanitize_for_json
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/preprocessing", tags=["preprocessing"])
 
@@ -79,9 +82,17 @@ async def missing_values(
   except KeyError:
     raise HTTPException(status_code=404, detail="No active session")
 
+  logger.info(f"Missing values request - method: {body.method}, columns: {body.columns}")
+
+  if body.columns is not None and len(body.columns) == 0:
+    logger.warning("Empty columns array received in missing values request")
+    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+
   try:
     df_new = handle_missing_values(state.df, body.method, body.columns)
+    logger.info(f"Successfully processed missing values. Original shape: {state.df.shape}, New shape: {df_new.shape}")
   except Exception as e:
+    logger.error(f"Missing values handling failed: {str(e)}")
     raise HTTPException(status_code=400, detail=f"Missing values handling failed: {str(e)}")
   
   state = session_store.update_df(state.session_id, df_new)
