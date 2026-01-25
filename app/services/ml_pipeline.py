@@ -83,7 +83,7 @@ def analyze_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
   return analysis
 
 
-def handle_missing_values(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
+def handle_missing_values(df: pd.DataFrame, numerical_method: str, categorical_method: str, columns: List[str] | None) -> pd.DataFrame:
   # If columns is None, process only columns with missing values (for efficiency)
   # If columns is provided, process those specific columns
   if columns is None:
@@ -95,29 +95,37 @@ def handle_missing_values(df: pd.DataFrame, method: str, columns: List[str] | No
   if not target_cols:
     return df
     
-  if method == "drop":
+  if numerical_method == "drop":
     return df.dropna(subset=target_cols)
 
-  if method in {"mean", "median"}:
-    df_new = df.copy()
+  df_new = df.copy()
+  
+  if numerical_method in {"mean", "median"}:
     for col in target_cols:
       if pd.api.types.is_numeric_dtype(df_new[col]):
-        if method == "mean":
+        if numerical_method == "mean":
           fill_val = df_new[col].mean()
         else:
           fill_val = df_new[col].median()
         df_new[col] = df_new[col].fillna(fill_val)
+      else:
+        # For categorical columns, use specified categorical method
+        if categorical_method == "mode":
+          mode_series = df_new[col].mode()
+          if not mode_series.empty:
+            df_new[col] = df_new[col].fillna(mode_series.iloc[0])
+        elif categorical_method == "drop":
+          df_new = df_new.dropna(subset=[col])
     return df_new
 
-  if method == "mode":
-    df_new = df.copy()
+  if numerical_method == "mode":
     for col in target_cols:
       mode_series = df_new[col].mode()
       if not mode_series.empty:
         df_new[col] = df_new[col].fillna(mode_series.iloc[0])
     return df_new
 
-  return df
+  return df_new
 
 
 def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:

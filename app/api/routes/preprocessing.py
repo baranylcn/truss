@@ -82,14 +82,14 @@ async def missing_values(
   except KeyError:
     raise HTTPException(status_code=404, detail="No active session")
 
-  logger.info(f"Missing values request - method: {body.method}, columns: {body.columns}")
+  logger.info(f"Missing values request - numerical_method: {body.numerical_method}, categorical_method: {body.categorical_method}, columns: {body.columns}")
 
   if body.columns is not None and len(body.columns) == 0:
     logger.warning("Empty columns array received in missing values request")
     raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
 
   try:
-    df_new = handle_missing_values(state.df, body.method, body.columns)
+    df_new = handle_missing_values(state.df, body.numerical_method, body.categorical_method, body.columns)
     logger.info(f"Successfully processed missing values. Original shape: {state.df.shape}, New shape: {df_new.shape}")
   except Exception as e:
     logger.error(f"Missing values handling failed: {str(e)}")

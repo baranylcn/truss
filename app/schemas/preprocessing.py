@@ -4,7 +4,8 @@ from .dataset import DatasetInfo
 
 
 class MissingValuesRequest(BaseModel):
-  method: str  # "drop" | "mean" | "median" | "mode"
+  numerical_method: str  # For numeric columns: "drop" | "mean" | "median"
+  categorical_method: str = "mode"  # For categorical columns: "drop" | "mode" (defaults to "mode")
   columns: Optional[List[str]] = None
 
 
