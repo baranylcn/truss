@@ -209,7 +209,7 @@ export const OutlierHandlingStep: React.FC<Props> = ({
       await ensureSnapshot();
       const resp = await apiService.removeOutliers({
         method: globalMethod,
-        columns: []
+        columns: null
       });
       if (resp.error) {
         toast.error(`Remove failed: ${resp.error}`);

@@ -103,22 +103,15 @@ export const EncodingStep: React.FC<Props> = ({
     try {
       await ensureSnapshot();
 
-      // Backend sadece method + columns kabul ediyor
-      // defaultStrategy'yi method olarak gönder
       let methodToUse = defaultStrategy;
       
-      // Backend'in desteklemediği stratejileri basitleştir
       if (methodToUse === 'auto' || methodToUse === 'binary' || methodToUse === 'target') {
         methodToUse = 'label'; // fallback
       }
 
       const resp = await apiService.encodeFeatures({
         method: methodToUse,
-        columns: processedData.columns.filter(col => {
-          // Kategorik kolonları seç (numeric olmayan)
-          const dtype = processedData.dtypes?.[col] || '';
-          return !dtype.includes('int') && !dtype.includes('float') && !dtype.includes('double');
-        })
+        columns: null
       });
       
       if (resp.error) {
@@ -152,11 +145,9 @@ export const EncodingStep: React.FC<Props> = ({
     try {
       await ensureSnapshot();
       
-      // Her column için ayrı API çağrısı yap
       for (const setting of columnSettings) {
         let methodToUse = setting.strategy;
         
-        // Backend'in desteklemediği stratejileri basitleştir
         if (methodToUse === 'auto' || methodToUse === 'binary' || methodToUse === 'target') {
           methodToUse = 'label'; // fallback
         }
@@ -171,7 +162,6 @@ export const EncodingStep: React.FC<Props> = ({
           continue;
         }
         
-        // Her çağrıdan sonra update et
         if (resp.data) {
           const d: any = resp.data;
           onDataUpdate({

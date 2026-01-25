@@ -129,7 +129,7 @@ export const ScalingStep: React.FC<ScalingStepProps> = ({
 
       const response = await apiService.scaleFeatures({
         method,
-        columns: []
+        columns: null
       });
 
       if (response.error) {

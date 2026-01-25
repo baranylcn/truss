@@ -136,7 +136,7 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
       
       const response = await apiService.handleMissingValues({
         method: methodToUse,
-        columns: []
+        columns: null
       });
       
       if (response.error) {

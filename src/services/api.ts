@@ -225,11 +225,11 @@ class ApiService {
     }
   }
 
-  async handleMissingValues(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
+  async handleMissingValues(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
       const backendParams = {
         method: params.method,
-        columns: params.columns && params.columns.length > 0 ? params.columns : []
+        columns: params.columns && params.columns.length > 0 ? params.columns : null
       };
       console.log('Sending to backend:', backendParams);
       const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.MISSING_VALUES, backendParams);
@@ -301,7 +301,7 @@ class ApiService {
     }
   }
 
-  async handleOutliers(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
+  async handleOutliers(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
       return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, params);
     }
@@ -447,7 +447,7 @@ class ApiService {
     }
   }
 
-  async removeOutliers(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
+  async removeOutliers(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
       return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, params);
     }
@@ -535,9 +535,13 @@ class ApiService {
     }
   }
 
-  async encodeFeatures(params: { method: string; columns: string[] }): Promise<ApiResponse> {
+  async encodeFeatures(params: { method: string; columns: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.ENCODING, params);
+      const backendParams = {
+        method: params.method,
+        columns: params.columns && params.columns.length > 0 ? params.columns : null
+      };
+      return apiClient.post(API_ENDPOINTS.PREPROCESSING.ENCODING, backendParams);
     }
 
     try {
@@ -547,11 +551,16 @@ class ApiService {
       const { method, columns: targetCols } = params;
       const { data, columns } = this.sessionData;
 
+      const categorialColumns = targetCols || columns.filter((col: string, idx: number) => {
+        const dtype = this.sessionData.dtypes?.[col] || '';
+        return !dtype.includes('int') && !dtype.includes('float') && !dtype.includes('double');
+      });
+
       let newData = data.map((row: any[]) => [...row]);
       let newColumns = [...columns];
 
       if (method === 'label' || method === 'ordinal') {
-        for (const colName of targetCols) {
+        for (const colName of categorialColumns) {
           const colIdx = newColumns.indexOf(colName);
           if (colIdx === -1) continue;
 
@@ -568,8 +577,8 @@ class ApiService {
           });
         }
       } else if (method === 'onehot') {
-        for (let i = targetCols.length - 1; i >= 0; i--) {
-          const colName = targetCols[i];
+        for (let i = categorialColumns.length - 1; i >= 0; i--) {
+          const colName = categorialColumns[i];
           const colIdx = newColumns.indexOf(colName);
           if (colIdx === -1) continue;
 
@@ -621,7 +630,7 @@ class ApiService {
     return this.encodeFeatures({ method: params.method, columns: params.columns });
   }
 
-  async scaleData(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
+  async scaleData(params: { method: string; columns?: string[] | null }): Promise<ApiResponse> {
     if (USE_BACKEND) {
       return apiClient.post(API_ENDPOINTS.PREPROCESSING.SCALING, params);
     }
