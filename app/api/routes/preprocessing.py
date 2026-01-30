@@ -117,15 +117,30 @@ async def detect_outliers(
     logger.warning("Empty columns array received in detect-outliers request")
     raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
 
-  try:
-    target_cols = body.columns or [c for c in state.df.columns if pd.api.types.is_numeric_dtype(state.df[c])]
-  except Exception:
-    target_cols = [c for c in state.df.columns if pd.api.types.is_numeric_dtype(state.df[c])]
+  if body.columns:
+    invalid_cols = [c for c in body.columns if c not in state.df.columns]
+    if invalid_cols:
+      logger.warning(f"Invalid columns requested: {invalid_cols}")
+      raise HTTPException(status_code=400, detail=f"Invalid columns: {', '.join(invalid_cols)}")
+    
+    target_cols = [
+      c for c in body.columns
+      if c in state.df.columns 
+      and pd.api.types.is_numeric_dtype(state.df[c]) 
+      and not pd.api.types.is_bool_dtype(state.df[c])
+    ]
+  else:
+    target_cols = [
+      c for c in state.df.columns
+      if pd.api.types.is_numeric_dtype(state.df[c]) and not pd.api.types.is_bool_dtype(state.df[c])
+    ]
 
   outlier_results = {}
   
   for col in target_cols:
-    if not pd.api.types.is_numeric_dtype(state.df[col]):
+    if col not in state.df.columns:
+      continue
+    if not pd.api.types.is_numeric_dtype(state.df[col]) or pd.api.types.is_bool_dtype(state.df[col]):
       continue
       
     df_col = state.df[col].dropna()

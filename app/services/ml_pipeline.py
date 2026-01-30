@@ -109,7 +109,6 @@ def handle_missing_values(df: pd.DataFrame, numerical_method: str, categorical_m
           fill_val = df_new[col].median()
         df_new[col] = df_new[col].fillna(fill_val)
       else:
-        # For categorical columns, use specified categorical method
         if categorical_method == "mode":
           mode_series = df_new[col].mode()
           if not mode_series.empty:
@@ -130,8 +129,10 @@ def handle_missing_values(df: pd.DataFrame, numerical_method: str, categorical_m
 
 def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
   if columns is None:
-    # For global settings, only process numeric columns
-    target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    target_cols = [
+      c for c in df.columns
+      if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])
+    ]
   else:
     target_cols = columns if columns else []
   
@@ -142,7 +143,7 @@ def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) ->
 
   if method == "iqr":
     for col in target_cols:
-      if not pd.api.types.is_numeric_dtype(df_new[col]):
+      if not pd.api.types.is_numeric_dtype(df_new[col]) or pd.api.types.is_bool_dtype(df_new[col]):
         continue
       q1 = df_new[col].quantile(0.25)
       q3 = df_new[col].quantile(0.75)
@@ -153,7 +154,7 @@ def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) ->
 
   elif method == "zscore":
     for col in target_cols:
-      if not pd.api.types.is_numeric_dtype(df_new[col]):
+      if not pd.api.types.is_numeric_dtype(df_new[col]) or pd.api.types.is_bool_dtype(df_new[col]):
         continue
       mean = df_new[col].mean()
       std = df_new[col].std()
@@ -168,7 +169,6 @@ def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) ->
 def encode_columns(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
   df_new = df.copy()
   
-  # If columns is None, automatically select categorical columns
   if columns is None:
     target_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
   else:
@@ -189,7 +189,6 @@ def encode_columns(df: pd.DataFrame, method: str, columns: List[str] | None) -> 
 def scale_columns(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
   df_new = df.copy()
   if columns is None:
-    # For global settings, only scale numeric columns
     target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
   else:
     target_cols = columns if columns else []
