@@ -116,7 +116,8 @@ export const OutlierHandlingStep: React.FC<Props> = ({
 
         const resp = await apiService.detectOutliers({
           method: detectMethod,
-          columns: columnsToDetect
+          columns: columnsToDetect,
+          factor: detectFactor
         });
 
         if (mySeq !== detectSeqRef.current) return;
@@ -142,7 +143,7 @@ export const OutlierHandlingStep: React.FC<Props> = ({
         detectTimerRef.current = null;
       }
     };
-  }, [processedData, detectMethod, columnDetectConfigs]);
+  }, [processedData, detectMethod, detectFactor, columnDetectConfigs]);
 
   useEffect(() => {
     return () => {

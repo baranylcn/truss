@@ -418,11 +418,12 @@ class ApiService {
     }
   }
 
-  async detectOutliers(params: { method: string; columns?: string[] }): Promise<ApiResponse> {
+  async detectOutliers(params: { method: string; columns?: string[]; factor?: number }): Promise<ApiResponse> {
     if (USE_BACKEND) {
       const backendParams = {
         method: params.method,
-        columns: params.columns && params.columns.length > 0 ? params.columns : undefined
+        columns: params.columns && params.columns.length > 0 ? params.columns : undefined,
+        factor: params.factor
       };
       return apiClient.post(API_ENDPOINTS.PREPROCESSING.DETECT_OUTLIERS, backendParams);
     }
