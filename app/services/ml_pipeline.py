@@ -20,9 +20,9 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, On
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-from app.core import logging
-
 from .session_store import session_store, SessionState
+
+logger = logging.getLogger(__name__)
 
 
 def df_to_session_payload(state: SessionState) -> Dict[str, Any]:
@@ -33,7 +33,6 @@ def df_to_session_payload(state: SessionState) -> Dict[str, Any]:
   missing_values = {col: int(df[col].isna().sum()) for col in columns}
   
   categorical_columns = [col for col in columns if not pd.api.types.is_numeric_dtype(df[col])]
-  logger = logging.getLogger(__name__)
   logger.debug(f"Session payload - Total columns: {len(columns)}, Categorical: {len(categorical_columns)}")
   logger.debug(f"Categorical columns: {categorical_columns}")
   logger.debug(f"Column dtypes: {[(col, str(df[col].dtype)) for col in columns]}")
