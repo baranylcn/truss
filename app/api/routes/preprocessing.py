@@ -117,6 +117,9 @@ async def detect_outliers(
     logger.warning("Empty columns array received in detect-outliers request")
     raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
 
+  logger.info(f"Detect outliers - method: {body.method}, requested columns: {body.columns}")
+  logger.info(f"Available columns in DataFrame: {list(state.df.columns)}")
+  
   if body.columns:
     invalid_cols = [c for c in body.columns if c not in state.df.columns]
     if invalid_cols:
@@ -135,16 +138,22 @@ async def detect_outliers(
       if pd.api.types.is_numeric_dtype(state.df[c]) and not pd.api.types.is_bool_dtype(state.df[c])
     ]
 
+  logger.info(f"Target columns for outlier detection: {target_cols}")
   outlier_results = {}
   
   for col in target_cols:
     if col not in state.df.columns:
+      logger.warning(f"Column {col} not in DataFrame, skipping")
       continue
     if not pd.api.types.is_numeric_dtype(state.df[col]) or pd.api.types.is_bool_dtype(state.df[col]):
+      logger.warning(f"Column {col} is not numeric or is boolean, skipping")
       continue
       
     df_col = state.df[col].dropna()
+    logger.info(f"Processing column '{col}': total values={len(state.df[col])}, non-null values={len(df_col)}")
+    
     if df_col.empty:
+      logger.info(f"Column '{col}' has no non-null values")
       outlier_results[col] = {"count": 0, "values": [], "method": body.method}
       continue
     
@@ -156,16 +165,19 @@ async def detect_outliers(
       iqr = q3 - q1
       lower = q1 - 1.5 * iqr
       upper = q3 + 1.5 * iqr
+      logger.info(f"IQR for '{col}': Q1={q1}, Q3={q3}, IQR={iqr}, bounds=[{lower}, {upper}]")
       outliers_mask = (state.df[col] < lower) | (state.df[col] > upper)
     elif body.method == "zscore":
       mean = df_col.mean()
       std = df_col.std()
+      logger.info(f"Z-score for '{col}': mean={mean}, std={std}")
       if std > 0:
         z = (state.df[col] - mean) / std
         outliers_mask = z.abs() > 3
     
     if outliers_mask is not None:
       outlier_count = int(outliers_mask.sum())
+      logger.info(f"Column '{col}': found {outlier_count} outliers")
       outlier_values = state.df.loc[outliers_mask, col].dropna().astype(float).tolist()
       outlier_results[col] = {
         "count": outlier_count,
@@ -173,8 +185,10 @@ async def detect_outliers(
         "method": body.method
       }
     else:
+      logger.warning(f"Column '{col}': outliers_mask is None (method not matched?)")
       outlier_results[col] = {"count": 0, "values": [], "method": body.method}
   
+  logger.info(f"Outlier detection complete. Results: {outlier_results}")
   return {"data": {"outlier_results": outlier_results}}
 
 
