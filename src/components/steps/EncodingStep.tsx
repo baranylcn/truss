@@ -47,6 +47,19 @@ export const EncodingStep: React.FC<Props> = ({
   const allColumns = processedData?.columns ?? [];
   const targetOptions = useMemo(() => allColumns, [allColumns]);
 
+  // helper to check if a column is numeric
+  const isNumericColumn = (col: string): boolean => {
+    const dtype = processedData?.dtypes?.[col] || '';
+    const dtypeStr = String(dtype).toLowerCase();
+    const numericKeywords = ['int', 'float', 'double', 'number', 'decimal'];
+    return numericKeywords.some(kw => dtypeStr.includes(kw));
+  };
+
+  // get only categorical columns
+  const categoricalColumns = useMemo(() => {
+    return allColumns.filter(c => !isNumericColumn(c));
+  }, [allColumns, processedData?.dtypes]);
+
   const hasSnapRef = useRef(false);
   const ensureSnapshot = async () => {
     if (hasSnapRef.current) return;
@@ -74,7 +87,7 @@ export const EncodingStep: React.FC<Props> = ({
   };
 
   const addColumn = () => {
-    const available = allColumns.filter(
+    const available = categoricalColumns.filter(
       (c) => !columnSettings.some((s) => s.column === c)
     );
     if (!available.length) {
@@ -309,7 +322,7 @@ export const EncodingStep: React.FC<Props> = ({
                     onChange={(e) => updateColumn(i, 'column', e.target.value)}
                     className="px-3 py-2 bg-gray-600 text-white rounded"
                   >
-                    {allColumns.map((c) => (
+                    {categoricalColumns.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
