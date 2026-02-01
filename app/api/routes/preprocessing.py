@@ -189,7 +189,7 @@ async def detect_outliers(
       outlier_results[col] = {"count": 0, "values": [], "method": body.method}
   
   logger.info(f"Outlier detection complete. Results: {outlier_results}")
-  return {"data": {"outlier_results": outlier_results}}
+  return {"outlier_results": outlier_results}
 
 
 @router.post("/outliers", response_model=PreprocessingResponse)
