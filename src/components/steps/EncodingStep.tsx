@@ -13,6 +13,7 @@ interface ProcessedData {
   shape: [number, number];
   dtypes: Record<string, string>;
   missingValues?: Record<string, number>;
+  categorical_columns?: string[];
 }
 
 interface Props {
@@ -50,15 +51,26 @@ export const EncodingStep: React.FC<Props> = ({
   // helper to check if a column is numeric
   const isNumericColumn = (col: string): boolean => {
     const dtype = processedData?.dtypes?.[col] || '';
+    if (!dtype) return false;
+    
     const dtypeStr = String(dtype).toLowerCase();
-    const numericKeywords = ['int', 'float', 'double', 'number', 'decimal'];
-    return numericKeywords.some(kw => dtypeStr.includes(kw));
+    const numericPatterns = ['int', 'float', 'double', 'decimal', 'numeric', 'number', 'uint', 'int32', 'int64', 'float32', 'float64'];
+    const isNumeric = numericPatterns.some(pattern => dtypeStr.includes(pattern));
+    
+    const isNonString = !['string', 'object', 'str', 'category', 'bool'].some(pattern => dtypeStr.includes(pattern));
+
+    console.debug(`[EncodingStep] Column "${col}" dtype="${dtype}" numeric=${isNumeric}`);
+    return isNumeric;
   };
 
-  // get only categorical columns
+  // get only categorical columns (prefer backend list if available)
   const categoricalColumns = useMemo(() => {
+    if (processedData?.categorical_columns && processedData.categorical_columns.length > 0) {
+      console.debug('[EncodingStep] Using backend categorical_columns:', processedData.categorical_columns);
+      return processedData.categorical_columns;
+    }
     return allColumns.filter(c => !isNumericColumn(c));
-  }, [allColumns, processedData?.dtypes]);
+  }, [allColumns, processedData?.dtypes, processedData?.categorical_columns]);
 
   const hasSnapRef = useRef(false);
   const ensureSnapshot = async () => {
