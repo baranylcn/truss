@@ -44,13 +44,20 @@ class ApiService {
       const parsed = parseCSV(text);
 
       const dtypes: Record<string, string> = {};
+      const categorical_columns: string[] = [];
+      
       parsed.columns.forEach((col: string, idx: number) => {
         const columnValues = parsed.data.map((row: any[]) => row[idx]).filter((v: any) => v !== null);
         if (columnValues.length === 0) {
           dtypes[col] = 'object';
+          categorical_columns.push(col);
         } else {
           const allNumeric = columnValues.every((v: any) => typeof v === 'number');
           dtypes[col] = allNumeric ? 'float64' : 'object';
+          
+          if (!allNumeric) {
+            categorical_columns.push(col);
+          }
         }
       });
 
@@ -61,6 +68,7 @@ class ApiService {
         shape: parsed.shape,
         missing_values: parsed.missingValues,
         dtypes: dtypes,
+        categorical_columns: categorical_columns,
         session_id: this.currentSessionId,
       };
 
@@ -644,11 +652,17 @@ class ApiService {
         missing_values[col] = nullCount;
       });
 
+      const updated_categorical_columns = newColumns.filter((col: string) => {
+        const dtype = this.sessionData.dtypes?.[col] || '';
+        return !dtype.includes('int') && !dtype.includes('float') && !dtype.includes('double');
+      });
+
       this.sessionData = {
         ...this.sessionData,
         data: newData,
         columns: newColumns,
         shape: [newData.length, newColumns.length] as [number, number],
+        categorical_columns: updated_categorical_columns,
       };
 
       return { data: { ...this.sessionData, missing_values } };

@@ -53,17 +53,15 @@ export const EncodingStep: React.FC<Props> = ({
     const dtype = processedData?.dtypes?.[col] || '';
     if (!dtype) return false;
     
-    const dtypeStr = String(dtype).toLowerCase();
-    const numericPatterns = ['int', 'float', 'double', 'decimal', 'numeric', 'number', 'uint', 'int32', 'int64', 'float32', 'float64'];
-    const isNumeric = numericPatterns.some(pattern => dtypeStr.includes(pattern));
+    const dtypeStr = String(dtype).toLowerCase().trim();
     
-    const isNonString = !['string', 'object', 'str', 'category', 'bool'].some(pattern => dtypeStr.includes(pattern));
+    const numericPatterns = ['int', 'float', 'double', 'decimal', 'numeric', 'number', 'uint'];
+    const isNumeric = numericPatterns.some(pattern => dtypeStr.includes(pattern));
 
     console.debug(`[EncodingStep] Column "${col}" dtype="${dtype}" numeric=${isNumeric}`);
     return isNumeric;
   };
 
-  // get only categorical columns (prefer backend list if available)
   const categoricalColumns = useMemo(() => {
     console.log('[EncodingStep] processedData:', {
       hasCategoricalColumns: !!processedData?.categorical_columns,
@@ -72,8 +70,7 @@ export const EncodingStep: React.FC<Props> = ({
       dtypes: processedData?.dtypes
     });
     
-    // First try to use backend-provided categorical columns
-    if (processedData?.categorical_columns && processedData.categorical_columns.length > 0) {
+    if (processedData?.categorical_columns && processedData.categorical_columns.length >= 0) {
       console.debug('[EncodingStep] Using backend categorical_columns:', processedData.categorical_columns);
       return processedData.categorical_columns;
     }
@@ -81,7 +78,7 @@ export const EncodingStep: React.FC<Props> = ({
     console.warn('[EncodingStep] Backend categorical_columns not available, using fallback detection');
     const detected = allColumns.filter(c => {
       const isNum = isNumericColumn(c);
-      console.log(`[EncodingStep] Column "${c}" - isNumeric: ${isNum}`);
+      console.log(`[EncodingStep] Fallback - Column "${c}" - isNumeric: ${isNum}`);
       return !isNum;
     });
     console.log('[EncodingStep] Fallback detected categorical columns:', detected);
