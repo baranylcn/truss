@@ -122,6 +122,7 @@ export const CorrelationStep: React.FC<CorrelationStepProps> = ({
           columns: res.data.columns,
           shape: res.data.shape,
           dtypes: processedData?.dtypes || {},
+          categorical_columns: res.data.categorical_columns || processedData?.categorical_columns,
         };
         onDataUpdate(next);
 

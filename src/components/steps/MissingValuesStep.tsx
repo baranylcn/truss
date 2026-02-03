@@ -16,6 +16,7 @@ export interface ProcessedData {
   shape: [number, number];
   dtypes: Record<string, string>;
   missingValues?: Record<string, number>;
+  categorical_columns?: string[];
 }
 
 interface MissingValuesStepProps {
@@ -79,7 +80,8 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
               columns: res.data.columns,
               shape: res.data.shape,
               dtypes: processedData.dtypes || {},
-              missingValues: res.data.missing_values
+              missingValues: res.data.missing_values,
+              categorical_columns: res.data.categorical_columns || processedData?.categorical_columns
             });
           }
         } catch {
@@ -103,7 +105,8 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
       columns: payload.columns,
       shape: payload.shape,
       dtypes: processedData?.dtypes || {},
-      missingValues: payload.missingValues
+      missingValues: payload.missingValues,
+      categorical_columns: processedData?.categorical_columns
     });
 
     if (payload.missingValues) {
@@ -117,7 +120,8 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
           columns: res.data.columns,
           shape: res.data.shape,
           dtypes: processedData?.dtypes || {},
-          missingValues: res.data.missing_values
+          missingValues: res.data.missing_values,
+          categorical_columns: res.data.categorical_columns || processedData?.categorical_columns
         });
       }
     }
@@ -153,7 +157,8 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
           columns: response.data.columns,
           shape: response.data.shape,
           dtypes: processedData.dtypes || {},
-          missingValues: response.data.missing_values
+          missingValues: response.data.missing_values,
+          categorical_columns: response.data.categorical_columns || processedData?.categorical_columns
         };
         console.log('Updated data:', updated);
         onDataUpdate(updated);
@@ -203,7 +208,8 @@ export const MissingValuesStep: React.FC<MissingValuesStepProps> = ({
             columns: response.data.columns,
             shape: response.data.shape,
             dtypes: processedData.dtypes || {},
-            missingValues: response.data.missing_values
+            missingValues: response.data.missing_values,
+            categorical_columns: response.data.categorical_columns || processedData?.categorical_columns
           });
           setMissingInfo(response.data.missing_values);
         } else {

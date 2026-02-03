@@ -143,6 +143,7 @@ export const ScalingStep: React.FC<ScalingStepProps> = ({
           columns: response.data.columns,
           shape: response.data.shape,
           dtypes: processedData?.dtypes || {},
+          categorical_columns: response.data.categorical_columns || processedData?.categorical_columns,
         });
         toast.success(response.data.message || 'Scaling uygulandı.');
       }
@@ -181,6 +182,7 @@ export const ScalingStep: React.FC<ScalingStepProps> = ({
           columns: response.data.columns,
           shape: response.data.shape,
           dtypes: processedData?.dtypes || {},
+          categorical_columns: response.data.categorical_columns || processedData?.categorical_columns,
         });
         toast.success(response.data.message || 'Sütun bazlı scaling uygulandı.');
       }

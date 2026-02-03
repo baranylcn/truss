@@ -7,6 +7,8 @@ const USE_BACKEND = import.meta.env.VITE_USE_BACKEND === 'true';
 class ApiService {
   private sessionData: any = null;
   private sessionHistory: any[] = [];
+  private trainedModels: string[] = [];
+  private taskType: string | null = null;
   public currentSessionId: string = '';
 
   async uploadDataset(file: File): Promise<ApiResponse> {
@@ -30,6 +32,9 @@ class ApiService {
       this.sessionData = response.data;
       this.currentSessionId = (response.data as any)?.session_id || '';
       this.sessionHistory = [{ ...this.sessionData }];
+      
+      this.trainedModels = [];
+      this.taskType = null;
 
       return { data: this.sessionData };
     } catch (error: any) {
@@ -73,6 +78,9 @@ class ApiService {
       };
 
       this.sessionHistory = [{ ...this.sessionData }];
+
+      this.trainedModels = [];
+      this.taskType = null;
 
       return { data: this.sessionData };
     } catch (error: any) {
@@ -170,6 +178,7 @@ class ApiService {
           data: datasetInfo?.data,
           columns: datasetInfo?.columns,
           shape: datasetInfo?.shape,
+          categorical_columns: datasetInfo?.categorical_columns,
         }
       };
     }
@@ -406,11 +415,13 @@ class ApiService {
           ...this.sessionData,
           data: filteredData,
           shape: [filteredData.length, columns.length] as [number, number],
+          categorical_columns: this.sessionData.categorical_columns,
         };
       } else {
         this.sessionData = {
           ...this.sessionData,
           data: newData,
+          categorical_columns: this.sessionData.categorical_columns,
         };
       }
 
@@ -773,6 +784,7 @@ class ApiService {
       this.sessionData = {
         ...this.sessionData,
         data: newData,
+        categorical_columns: this.sessionData.categorical_columns,
       };
 
       return { data: { ...this.sessionData, missing_values } };
@@ -810,13 +822,27 @@ class ApiService {
     test_size?: number;
     problem_type?: string;
   }): Promise<ApiResponse> {
+    // Get model type from params or fallback to model_names array
+    const modelType = params.model_type || params.model_names?.[0];
+    if (!modelType) {
+      return { error: 'Model type is required' };
+    }
+
     if (USE_BACKEND) {
-      const modelType = params.model_type || params.model_names?.[0] || 'random_forest';
-      return apiClient.post(API_ENDPOINTS.MODEL.TRAIN, {
+      const response = await apiClient.post(API_ENDPOINTS.MODEL.TRAIN, {
         model_type: modelType,
         target_column: params.target_column,
         test_size: params.test_size || 0.2,
       });
+      
+      if (!response.error && response.data) {
+        if (!this.trainedModels.includes(modelType)) {
+          this.trainedModels.push(modelType);
+        }
+        this.taskType = (response.data as any).task_type;
+      }
+      
+      return response;
     }
 
     try {
@@ -837,6 +863,11 @@ class ApiService {
         task_type = allNumeric ? 'regression' : 'classification';
       }
 
+      if (!this.trainedModels.includes(modelType)) {
+        this.trainedModels.push(modelType);
+      }
+      this.taskType = task_type;
+
       const metrics = {
         accuracy: task_type === 'classification' ? 0.85 : 0.82,
         precision: task_type === 'classification' ? 0.83 : 0.81,
@@ -847,7 +878,7 @@ class ApiService {
       return {
         data: {
           success: true,
-          model_type: params.model_type || params.model_names?.[0] || 'random_forest',
+          model_type: modelType,
           target_column: params.target_column,
           task_type: task_type,
           metrics: metrics,
@@ -864,12 +895,25 @@ class ApiService {
     }
 
     try {
+      const metrics = {
+        accuracy: this.taskType === 'regression' ? 0.82 : 0.85,
+        precision: this.taskType === 'regression' ? 0.81 : 0.83,
+        recall: this.taskType === 'regression' ? 0.79 : 0.87,
+        f1_score: this.taskType === 'regression' ? 0.80 : 0.85,
+      };
+
+      const results = this.trainedModels.map((model: string) => ({
+        model: model,
+        metrics: metrics
+      }));
+
       return {
         data: {
-          accuracy: 0.85,
-          precision: 0.83,
-          recall: 0.87,
-          f1_score: 0.85,
+          ...metrics,
+          problem_type: this.taskType || 'classification',
+          best_model: this.trainedModels[0] || null,
+          trained_models: this.trainedModels,
+          results: results,
         }
       };
     } catch (error: any) {
@@ -995,11 +1039,15 @@ class ApiService {
           colIndices.map((idx: number) => row[idx])
         );
 
+        const updated_categorical = (current.categorical_columns || [])
+          .filter((col: string) => !dropped_columns.includes(col));
+
         const next = {
           ...current,
           columns: newColumns,
           data: newData,
           shape: [newData.length, newColumns.length] as [number, number],
+          categorical_columns: updated_categorical,
         };
 
         this.sessionData = next;

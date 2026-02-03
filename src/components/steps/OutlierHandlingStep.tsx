@@ -15,6 +15,7 @@ interface ProcessedData {
   columns: string[];
   shape: [number, number];
   dtypes: Record<string, string>;
+  categorical_columns?: string[];
 }
 
 type DetectMethod = 'iqr' | 'zscore' | 'auto';
@@ -220,7 +221,8 @@ export const OutlierHandlingStep: React.FC<Props> = ({
           data: d.data,
           columns: d.columns,
           shape: d.shape,
-          dtypes: processedData.dtypes
+          dtypes: processedData.dtypes,
+          categorical_columns: d.categorical_columns || processedData.categorical_columns
         });
         toast.success('Global outlier handling applied');
       }
@@ -254,7 +256,8 @@ export const OutlierHandlingStep: React.FC<Props> = ({
             data: d.data,
             columns: d.columns,
             shape: d.shape,
-            dtypes: processedData.dtypes
+            dtypes: processedData.dtypes,
+            categorical_columns: d.categorical_columns || processedData.categorical_columns
           });
         }
       }

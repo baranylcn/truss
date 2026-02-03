@@ -25,6 +25,7 @@ interface ProcessedData {
   shape?: [number, number];
   dtypes?: Record<string, string>;
   missingValues?: Record<string, number>;
+  categorical_columns?: string[];
 }
 
 interface AnalysisStepProps {
@@ -141,7 +142,10 @@ export const AnalysisStep: React.FC<AnalysisStepProps> = ({
         onDataUpdate({
           data: response.data.data,
           columns: response.data.columns,
-          missingValues: response.data.missing_values
+          shape: response.data.shape,
+          dtypes: response.data.dtypes || processedData?.dtypes,
+          missingValues: response.data.missing_values,
+          categorical_columns: response.data.categorical_columns || processedData?.categorical_columns
         });
         setAnalysisResults(response.data);
       }
@@ -157,7 +161,10 @@ export const AnalysisStep: React.FC<AnalysisStepProps> = ({
     onDataUpdate({
       data: serverData.data,
       columns: serverData.columns,
-      missingValues: serverData.missing_values ?? serverData.missingValues
+      shape: serverData.shape || processedData?.shape,
+      dtypes: serverData.dtypes || processedData?.dtypes,
+      missingValues: serverData.missing_values ?? serverData.missingValues,
+      categorical_columns: serverData.categorical_columns || processedData?.categorical_columns
     });
 
     const hasBits =
@@ -290,7 +297,10 @@ export const AnalysisStep: React.FC<AnalysisStepProps> = ({
     onDataUpdate({
       data: analysisResults?.data ?? processedData?.data ?? [],
       columns: analysisResults?.columns ?? processedData?.columns ?? [],
-      missingValues: analysisResults?.missing_values
+      shape: analysisResults?.shape ?? processedData?.shape,
+      dtypes: analysisResults?.dtypes ?? processedData?.dtypes,
+      missingValues: analysisResults?.missing_values,
+      categorical_columns: analysisResults?.categorical_columns ?? processedData?.categorical_columns
     });
     onStepComplete(2, analysisResults);
   };
