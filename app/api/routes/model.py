@@ -35,6 +35,9 @@ async def train_model(
   except Exception as e:
     raise HTTPException(status_code=400, detail=f"Training failed: {e}")
 
+  state.trained_models = list(set([*state.trained_models, body.model_type]))
+  state.target_column = body.target_column
+
   result = await db.execute(
     select(MLSessions).where(MLSessions.session_id == state.session_id)
   )
@@ -78,7 +81,26 @@ async def evaluate_model():
     "recall": float(state.metrics.get("recall", 0.0)),
     "f1_score": float(state.metrics.get("f1_score", 0.0)),
   }
-  return metrics
+
+  results = []
+  for model_name in state.trained_models:
+    results.append({
+      "model": model_name,
+      "metrics": metrics
+    })
+
+  best_model = state.trained_models[0] if state.trained_models else None
+
+  return {
+    "accuracy": metrics["accuracy"],
+    "precision": metrics["precision"],
+    "recall": metrics["recall"],
+    "f1_score": metrics["f1_score"],
+    "problem_type": state.task_type or "classification",
+    "best_model": best_model,
+    "trained_models": state.trained_models,
+    "results": results,
+  }
 
 
 @router.post("/optimize", response_model=OptimizeResponse)

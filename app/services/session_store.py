@@ -13,8 +13,10 @@ class SessionState:
   df: pd.DataFrame
   history: List[pd.DataFrame] = field(default_factory=list)
   model: Any = None
-  task_type: Optional[str] = None  # "classification" | "regression"
+  task_type: Optional[str] = None
   metrics: Dict[str, float] = field(default_factory=dict)
+  trained_models: List[str] = field(default_factory=list)
+  target_column: Optional[str] = None
 
 
 class SessionStore:

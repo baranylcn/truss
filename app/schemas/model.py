@@ -21,6 +21,10 @@ class EvaluateResponse(BaseModel):
   precision: float
   recall: float
   f1_score: float
+  problem_type: Optional[str] = None
+  best_model: Optional[str] = None
+  trained_models: Optional[List[str]] = None
+  results: Optional[List[Dict[str, Any]]] = None
 
 
 class OptimizeRequest(BaseModel):

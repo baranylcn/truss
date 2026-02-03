@@ -30,3 +30,6 @@ def setup_logging() -> None:
 
 
 logger = logging.getLogger("app")
+
+
+logger = logging.getLogger("app")
