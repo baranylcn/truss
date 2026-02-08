@@ -11,6 +11,30 @@ class ApiService {
   private taskType: string | null = null;
   public currentSessionId: string = '';
 
+  private extractDatasetPayload(payload: any): any | null {
+    if (!payload) return null;
+    if (payload.dataset_info) return payload.dataset_info;
+    return payload;
+  }
+
+  private updateSessionDataFromPayload(payload: any): void {
+    const dataset = this.extractDatasetPayload(payload);
+    if (!dataset || !dataset.data || !dataset.columns) return;
+
+    const next = {
+      ...this.sessionData,
+      ...dataset,
+      dtypes: dataset.dtypes ?? this.sessionData?.dtypes,
+      categorical_columns: dataset.categorical_columns ?? this.sessionData?.categorical_columns,
+    };
+
+    if (!next.session_id && this.currentSessionId) {
+      next.session_id = this.currentSessionId;
+    }
+
+    this.sessionData = next;
+  }
+
   async uploadDataset(file: File): Promise<ApiResponse> {
     if (USE_BACKEND) {
       return this.uploadDatasetToBackend(file);
@@ -93,7 +117,11 @@ class ApiService {
       const endpoint = buildUrl(API_ENDPOINTS.SESSION.GET, {
         id: this.currentSessionId,
       });
-      return apiClient.get(endpoint);
+      const res = await apiClient.get(endpoint);
+      if (!res.error && res.data) {
+        this.updateSessionDataFromPayload(res.data);
+      }
+      return res;
     }
 
     if (!this.sessionData) {
@@ -140,6 +168,46 @@ class ApiService {
 
   async dropColumns(params: { columns: string[] }): Promise<ApiResponse> {
     try {
+      if (USE_BACKEND) {
+        if (!this.sessionData) {
+          const fresh = await this.getSessionData();
+          if (fresh.error) return { error: fresh.error };
+        }
+
+        const { columns: dropCols } = params;
+        if (!this.sessionData?.columns || !this.sessionData?.data) {
+          return { error: 'No session data available' };
+        }
+
+        const newColumns = this.sessionData.columns.filter((col: string) => !dropCols.includes(col));
+        if (newColumns.length === 0) {
+          return { error: 'You cannot drop all columns' };
+        }
+
+        const colIndices = this.sessionData.columns
+          .map((col: string, idx: number) => (dropCols.includes(col) ? -1 : idx))
+          .filter((idx: number) => idx !== -1);
+
+        const newData = this.sessionData.data.map((row: any[]) =>
+          colIndices.map((idx: number) => row[idx])
+        );
+
+        const endpoint = buildUrl(API_ENDPOINTS.SESSION.UPDATE, {
+          id: this.currentSessionId,
+        });
+
+        const updateRes = await apiClient.put(endpoint, {
+          data: newData,
+          columns: newColumns,
+        });
+
+        if (updateRes.error) return { error: updateRes.error };
+
+        this.updateSessionDataFromPayload(updateRes.data);
+
+        return { data: this.sessionData };
+      }
+
       const { columns: dropCols } = params;
       const newColumns = this.sessionData.columns.filter((col: string) => !dropCols.includes(col));
       const colIndices = this.sessionData.columns.map((col: string, idx: number) =>
@@ -170,6 +238,7 @@ class ApiService {
 
       const backendData = response.data as any;
       const datasetInfo = backendData?.dataset_info || backendData;
+      this.updateSessionDataFromPayload(datasetInfo);
       return {
         data: {
           analysis: backendData?.analysis,
@@ -263,6 +332,9 @@ class ApiService {
       console.log('Sending to backend:', backendParams);
       const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.MISSING_VALUES, backendParams);
       console.log('Backend response:', response);
+      if (!response.error && response.data) {
+        this.updateSessionDataFromPayload(response.data);
+      }
       return response;
     }
 
@@ -342,7 +414,11 @@ class ApiService {
         method: params.method,
         columns: params.columns && params.columns.length > 0 ? params.columns : null
       };
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, backendParams);
+      const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, backendParams);
+      if (!response.error && response.data) {
+        this.updateSessionDataFromPayload(response.data);
+      }
+      return response;
     }
 
     try {
@@ -499,7 +575,11 @@ class ApiService {
         method: params.method,
         columns: params.columns && params.columns.length > 0 ? params.columns : null
       };
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, backendParams);
+      const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.OUTLIERS, backendParams);
+      if (!response.error && response.data) {
+        this.updateSessionDataFromPayload(response.data);
+      }
+      return response;
     }
 
     try {
@@ -591,7 +671,11 @@ class ApiService {
         method: params.method,
         columns: params.columns && params.columns.length > 0 ? params.columns : null
       };
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.ENCODING, backendParams);
+      const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.ENCODING, backendParams);
+      if (!response.error && response.data) {
+        this.updateSessionDataFromPayload(response.data);
+      }
+      return response;
     }
 
     try {
@@ -692,7 +776,11 @@ class ApiService {
         method: params.method,
         columns: params.columns && params.columns.length > 0 ? params.columns : null
       };
-      return apiClient.post(API_ENDPOINTS.PREPROCESSING.SCALING, backendParams);
+      const response = await apiClient.post(API_ENDPOINTS.PREPROCESSING.SCALING, backendParams);
+      if (!response.error && response.data) {
+        this.updateSessionDataFromPayload(response.data);
+      }
+      return response;
     }
 
     try {
@@ -1023,42 +1111,63 @@ class ApiService {
 
       const dropped_columns = columns_to_drop ?? [];
 
-      if (dropped_columns.length > 0 && this.sessionData) {
-        const current = this.sessionData;
+      if (dropped_columns.length > 0) {
+        if (!this.sessionData) {
+          const fresh = await this.getSessionData();
+          if (fresh.error) return { error: fresh.error };
+        }
 
-        const newColumns = current.columns.filter(
-          (col: string) => !dropped_columns.includes(col)
-        );
-        const colIndices = current.columns
-          .map((col: string, idx: number) =>
-            dropped_columns.includes(col) ? -1 : idx
-          )
-          .filter((idx: number) => idx !== -1);
+        if (this.sessionData?.columns && this.sessionData?.data) {
+          const current = this.sessionData;
 
-        const newData = current.data.map((row: any[]) =>
-          colIndices.map((idx: number) => row[idx])
-        );
+          const newColumns = current.columns.filter(
+            (col: string) => !dropped_columns.includes(col)
+          );
+          const colIndices = current.columns
+            .map((col: string, idx: number) =>
+              dropped_columns.includes(col) ? -1 : idx
+            )
+            .filter((idx: number) => idx !== -1);
 
-        const updated_categorical = (current.categorical_columns || [])
-          .filter((col: string) => !dropped_columns.includes(col));
+          const newData = current.data.map((row: any[]) =>
+            colIndices.map((idx: number) => row[idx])
+          );
 
-        const next = {
-          ...current,
-          columns: newColumns,
-          data: newData,
-          shape: [newData.length, newColumns.length] as [number, number],
-          categorical_columns: updated_categorical,
-        };
+          const updated_categorical = (current.categorical_columns || [])
+            .filter((col: string) => !dropped_columns.includes(col));
 
-        this.sessionData = next;
+          if (USE_BACKEND) {
+            const endpoint = buildUrl(API_ENDPOINTS.SESSION.UPDATE, {
+              id: this.currentSessionId,
+            });
 
-        return {
-          data: {
-            ...next,
-            dropped_columns,
-            highly_correlated,
-          },
-        };
+            const updateRes = await apiClient.put(endpoint, {
+              data: newData,
+              columns: newColumns,
+            });
+
+            if (updateRes.error) return { error: updateRes.error };
+            this.updateSessionDataFromPayload(updateRes.data);
+          } else {
+            const next = {
+              ...current,
+              columns: newColumns,
+              data: newData,
+              shape: [newData.length, newColumns.length] as [number, number],
+              categorical_columns: updated_categorical,
+            };
+            this.sessionData = next;
+          }
+
+          return {
+            data: {
+              ...this.sessionData,
+              categorical_columns: updated_categorical,
+              dropped_columns,
+              highly_correlated,
+            },
+          };
+        }
       }
 
       return {
