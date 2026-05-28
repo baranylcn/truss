@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 
 class DatasetInfo(BaseModel):
-  session_id: str
+  project_id: str
   data: List[List[Any]]
   columns: List[str]
   shape: Tuple[int, int]

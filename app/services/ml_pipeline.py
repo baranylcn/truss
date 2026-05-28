@@ -11,8 +11,9 @@ from sklearn.metrics import (
   recall_score,
   f1_score,
   r2_score,
-  mean_squared_error,
+  root_mean_squared_error,
   mean_absolute_error,
+  confusion_matrix,
 )
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -20,25 +21,19 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, On
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
-from .session_store import session_store, SessionState
-
 logger = logging.getLogger(__name__)
 
 
-def df_to_session_payload(state: SessionState) -> Dict[str, Any]:
-  df = state.df
+def df_to_payload(df: pd.DataFrame, project_id: str) -> Dict[str, Any]:
+  """Builds the standard API response payload from a DataFrame."""
   columns = list(df.columns)
   data = df.values.tolist()
   shape = (len(df), len(columns))
   missing_values = {col: int(df[col].isna().sum()) for col in columns}
-  
   categorical_columns = [col for col in columns if not pd.api.types.is_numeric_dtype(df[col])]
-  logger.debug(f"Session payload - Total columns: {len(columns)}, Categorical: {len(categorical_columns)}")
-  logger.debug(f"Categorical columns: {categorical_columns}")
-  logger.debug(f"Column dtypes: {[(col, str(df[col].dtype)) for col in columns]}")
-  
+
   return {
-    "session_id": state.session_id,
+    "project_id": project_id,
     "data": data,
     "columns": columns,
     "shape": shape,
@@ -236,19 +231,19 @@ def compute_correlation(df: pd.DataFrame) -> Tuple[Dict[str, Dict[str, float]], 
   return matrix, list(corr.columns)
 
 
-def train_model_for_current_session(
+def train_model(
+  df: pd.DataFrame,
   model_type: str,
   target_column: str,
   test_size: float,
-) -> Tuple[SessionState, Dict[str, float]]:
-  state = session_store.get_current()
-  
-  if target_column not in state.df.columns:
+) -> Tuple[Any, str, Dict[str, Any]]:
+  """Trains a model and returns (pipeline, task_type, metrics)."""
+  if target_column not in df.columns:
     raise ValueError(f"Target column '{target_column}' not found in DataFrame")
-  
-  df = state.df.dropna(subset=[target_column])
-  X = df.drop(columns=[target_column])
-  y = df[target_column]
+
+  df_clean = df.dropna(subset=[target_column])
+  X = df_clean.drop(columns=[target_column])
+  y = df_clean[target_column]
 
   cat_cols = [c for c in X.columns if not pd.api.types.is_numeric_dtype(X[c])]
   num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
@@ -261,21 +256,18 @@ def train_model_for_current_session(
     remainder="drop",
   )
 
-  if pd.api.types.is_numeric_dtype(y):
-    task_type = "regression"
-  else:
-    task_type = "classification"
+  task_type = "regression" if pd.api.types.is_numeric_dtype(y) else "classification"
 
   if model_type == "linear_regression" and task_type == "regression":
-    model = LinearRegression()
+    base_model = LinearRegression()
   elif model_type == "logistic_regression" and task_type == "classification":
-    model = LogisticRegression(max_iter=1000)
+    base_model = LogisticRegression(max_iter=1000)
   elif model_type == "random_forest":
-    model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
+    base_model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
   else:
-    model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
+    base_model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
 
-  pipe = Pipeline(steps=[("preprocess", preprocessor), ("model", model)])
+  pipe = Pipeline(steps=[("preprocess", preprocessor), ("model", base_model)])
 
   stratify = y if task_type == "classification" else None
   X_train, X_test, y_train, y_test = train_test_split(
@@ -285,20 +277,39 @@ def train_model_for_current_session(
   pipe.fit(X_train, y_train)
   y_pred = pipe.predict(X_test)
 
-  metrics: Dict[str, float] = {}
+  metrics: Dict[str, Any] = {}
   if task_type == "classification":
     metrics["accuracy"] = float(accuracy_score(y_test, y_pred))
     metrics["precision"] = float(precision_score(y_test, y_pred, average="weighted", zero_division=0))
     metrics["recall"] = float(recall_score(y_test, y_pred, average="weighted", zero_division=0))
     metrics["f1_score"] = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))
+    cm = confusion_matrix(y_test, y_pred)
+    metrics["confusion_matrix"] = cm.tolist()
+    metrics["class_names"] = [str(c) for c in sorted(y.unique())]
   else:
-    metrics["accuracy"] = float(r2_score(y_test, y_pred))
-    metrics["precision"] = float(mean_squared_error(y_test, y_pred, squared=False))
-    metrics["recall"] = float(mean_absolute_error(y_test, y_pred))
+    metrics["r2"] = float(r2_score(y_test, y_pred))
+    metrics["rmse"] = float(root_mean_squared_error(y_test, y_pred))
+    metrics["mae"] = float(mean_absolute_error(y_test, y_pred))
+    metrics["accuracy"] = metrics["r2"]
     metrics["f1_score"] = 0.0
 
-  state.model = pipe
-  state.task_type = task_type
-  state.metrics = metrics
+  # Feature importance (tree-based models)
+  try:
+    model_step = pipe.named_steps["model"]
+    preprocessor = pipe.named_steps["preprocess"]
+    if hasattr(model_step, "feature_importances_"):
+      try:
+        feat_names = list(preprocessor.get_feature_names_out())
+        feat_names = [n.split("__", 1)[-1] for n in feat_names]
+      except Exception:
+        feat_names = [f"feature_{i}" for i in range(len(model_step.feature_importances_))]
+      items = sorted(
+        zip(feat_names, model_step.feature_importances_),
+        key=lambda x: x[1],
+        reverse=True,
+      )
+      metrics["feature_importance"] = {k: float(v) for k, v in items[:15]}
+  except Exception:
+    pass
 
-  return state, metrics
+  return pipe, task_type, metrics

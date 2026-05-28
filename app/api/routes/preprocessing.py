@@ -1,295 +1,225 @@
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-import pandas as pd
+import uuid
 import logging
 
-from ...services.session_store import session_store
-from ...services.ml_pipeline import (
-  df_to_session_payload,
-  handle_missing_values,
-  handle_outliers,
-  encode_columns,
-  scale_columns,
-  compute_correlation,
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
+from app.core.auth import get_current_user
+from app.core.redis import get_dataframe, set_dataframe
+from app.services.db import get_db
+from app.services.models import User, Project, PipelineState
+from app.services.ml_pipeline import (
+    df_to_payload,
+    handle_missing_values,
+    handle_outliers,
+    encode_columns,
+    scale_columns,
+    compute_correlation,
 )
-from ...schemas.preprocessing import (
-  MissingValuesRequest,
-  OutliersRequest,
-  EncodingRequest,
-  ScalingRequest,
-  PreprocessingResponse,
-  CorrelationResponse,
+from app.schemas.preprocessing import (
+    MissingValuesRequest,
+    OutliersRequest,
+    EncodingRequest,
+    ScalingRequest,
+    PreprocessingResponse,
+    CorrelationResponse,
 )
-from ...services.db import get_db
-from ...services.models import MLSessions
-from ...utils.json_sanitize import sanitize_for_json
+from app.utils.json_sanitize import sanitize_for_json
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/preprocessing", tags=["preprocessing"])
 
 
-async def _sync_session_to_db(state, db: AsyncSession) -> None:
-  payload = df_to_session_payload(state)
-  df = state.df
-  columns = payload["columns"]
-  shape = list(payload["shape"])
-  dtypes = {col: str(df[col].dtype) for col in columns}
-  missing_values = payload["missing_values"]
-  current_data = {
-    "data": payload["data"],
-    "columns": columns,
-    "shape": shape,
-  }
-
-  current_data = sanitize_for_json(current_data)
-
-  result = await db.execute(
-    select(MLSessions).where(MLSessions.session_id == state.session_id)
-  )
-  row = result.scalar_one_or_none()
-
-  if row is None:
-    row = MLSessions(
-      session_id=state.session_id,
-      user_id=None,
-      filename=None,
-      columns=columns,
-      shape=shape,
-      dtypes=dtypes,
-      missing_values=missing_values,
-      current_data=current_data,
+async def _load_df_or_404(project_id: str, user: User, db: AsyncSession) -> pd.DataFrame:
+    """Fetches the project DataFrame from Redis, verifying ownership. Raises 404 if not found."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == uuid.UUID(project_id),
+            Project.user_id == user.id,
+        )
     )
-    db.add(row)
-  else:
-    row.columns = columns
-    row.shape = shape
-    row.dtypes = dtypes
-    row.missing_values = missing_values
-    row.current_data = current_data
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-  await db.commit()
+    df = await get_dataframe(project_id)
+    if df is None:
+        raise HTTPException(status_code=404, detail="Project data not found in cache. Please re-upload.")
+    return df
 
 
-@router.post("/missing-values", response_model=PreprocessingResponse)
+async def _save_pipeline_state(
+    project_id: str,
+    step_name: str,
+    config: dict,
+    df: pd.DataFrame,
+    db: AsyncSession,
+) -> None:
+    """Persists the step config and a data snapshot to pipeline_states."""
+    snapshot = sanitize_for_json({"data": df.values.tolist(), "columns": list(df.columns)})
+    state = PipelineState(
+        project_id=uuid.UUID(project_id),
+        step_name=step_name,
+        config=config,
+        data_snapshot=snapshot,
+    )
+    db.add(state)
+    await db.commit()
+
+
+@router.post("/missing-values/{project_id}", response_model=PreprocessingResponse)
 async def missing_values(
-  body: MissingValuesRequest,
-  db: AsyncSession = Depends(get_db),
-):
-  try:
-    state = session_store.get_current()
-  except KeyError:
-    raise HTTPException(status_code=404, detail="No active session")
+    project_id: str,
+    body: MissingValuesRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Fills or drops missing values using the specified strategy."""
+    df = await _load_df_or_404(project_id, current_user, db)
 
-  numerical_method = body.numerical_method or body.method or "mean"
-  categorical_method = body.categorical_method or "mode"
+    if body.columns is not None and len(body.columns) == 0:
+        raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
-  logger.info(f"Missing values request - numerical_method: {numerical_method}, categorical_method: {categorical_method}, columns: {body.columns}")
+    numerical_method = body.numerical_method or body.method or "mean"
+    categorical_method = body.categorical_method or "mode"
 
-  if body.columns is not None and len(body.columns) == 0:
-    logger.warning("Empty columns array received in missing values request")
-    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+    try:
+        df_new = handle_missing_values(df, numerical_method, categorical_method, body.columns)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-  try:
-    df_new = handle_missing_values(state.df, numerical_method, categorical_method, body.columns)
-    logger.info(f"Successfully processed missing values. Original shape: {state.df.shape}, New shape: {df_new.shape}")
-  except Exception as e:
-    logger.error(f"Missing values handling failed: {str(e)}")
-    raise HTTPException(status_code=400, detail=f"Missing values handling failed: {str(e)}")
-  
-  state = session_store.update_df(state.session_id, df_new)
-
-  await _sync_session_to_db(state, db)
-  return df_to_session_payload(state)
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "missing_values", body.model_dump(), df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
-@router.post("/detect-outliers")
+@router.post("/detect-outliers/{project_id}")
 async def detect_outliers(
-  body: OutliersRequest,
-):
-  try:
-    state = session_store.get_current()
-  except KeyError:
-    raise HTTPException(status_code=404, detail="No active session")
+    project_id: str,
+    body: OutliersRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Detects outliers and returns counts per column without modifying the data."""
+    df = await _load_df_or_404(project_id, current_user, db)
 
-  if body.columns is not None and len(body.columns) == 0:
-    logger.warning("Empty columns array received in detect-outliers request")
-    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+    if body.columns is not None and len(body.columns) == 0:
+        raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
-  # Get factor parameter or use defaults
-  factor = body.factor if body.factor is not None else (1.5 if body.method == 'iqr' else 3.0)
-  logger.info(f"Detect outliers - method: {body.method}, factor: {factor}, requested columns: {body.columns}")
-  logger.info(f"Available columns in DataFrame: {list(state.df.columns)}")
-  
-  if body.columns:
-    invalid_cols = [c for c in body.columns if c not in state.df.columns]
-    if invalid_cols:
-      logger.warning(f"Invalid columns requested: {invalid_cols}")
-      raise HTTPException(status_code=400, detail=f"Invalid columns: {', '.join(invalid_cols)}")
-    
-    target_cols = [
-      c for c in body.columns
-      if c in state.df.columns 
-      and pd.api.types.is_numeric_dtype(state.df[c]) 
-      and not pd.api.types.is_bool_dtype(state.df[c])
-    ]
-  else:
-    target_cols = [
-      c for c in state.df.columns
-      if pd.api.types.is_numeric_dtype(state.df[c]) and not pd.api.types.is_bool_dtype(state.df[c])
-    ]
+    factor = body.factor if body.factor is not None else (1.5 if body.method == "iqr" else 3.0)
 
-  logger.info(f"Target columns for outlier detection: {target_cols}")
-  outlier_results = {}
-  
-  for col in target_cols:
-    if col not in state.df.columns:
-      logger.warning(f"Column {col} not in DataFrame, skipping")
-      continue
-    if not pd.api.types.is_numeric_dtype(state.df[col]) or pd.api.types.is_bool_dtype(state.df[col]):
-      logger.warning(f"Column {col} is not numeric or is boolean, skipping")
-      continue
-      
-    df_col = state.df[col].dropna()
-    logger.info(f"Processing column '{col}': total values={len(state.df[col])}, non-null values={len(df_col)}")
-    
-    if df_col.empty:
-      logger.info(f"Column '{col}' has no non-null values")
-      outlier_results[col] = {"count": 0, "values": [], "method": body.method}
-      continue
-    
-    outliers_mask = None
-    
-    if body.method == "iqr":
-      q1 = df_col.quantile(0.25)
-      q3 = df_col.quantile(0.75)
-      iqr = q3 - q1
-      lower = q1 - factor * iqr
-      upper = q3 + factor * iqr
-      logger.info(f"IQR for '{col}': Q1={q1}, Q3={q3}, IQR={iqr}, factor={factor}, bounds=[{lower}, {upper}]")
-      outliers_mask = (state.df[col] < lower) | (state.df[col] > upper)
-    elif body.method == "zscore":
-      mean = df_col.mean()
-      std = df_col.std()
-      logger.info(f"Z-score for '{col}': mean={mean}, std={std}, threshold={factor}")
-      if std > 0:
-        z = (state.df[col] - mean) / std
-        outliers_mask = z.abs() > factor
-    
-    if outliers_mask is not None:
-      outlier_count = int(outliers_mask.sum())
-      logger.info(f"Column '{col}': found {outlier_count} outliers")
-      outlier_values = state.df.loc[outliers_mask, col].dropna().astype(float).tolist()
-      outlier_results[col] = {
-        "count": outlier_count,
-        "values": outlier_values[:100],
-        "method": body.method
-      }
+    if body.columns:
+        invalid = [c for c in body.columns if c not in df.columns]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid columns: {', '.join(invalid)}")
+        target_cols = [c for c in body.columns if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])]
     else:
-      logger.warning(f"Column '{col}': outliers_mask is None (method not matched?)")
-      outlier_results[col] = {"count": 0, "values": [], "method": body.method}
-  
-  logger.info(f"Outlier detection complete. Results: {outlier_results}")
-  return {"outlier_results": outlier_results}
+        target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])]
+
+    outlier_results: dict = {}
+    for col in target_cols:
+        df_col = df[col].dropna()
+        if df_col.empty:
+            outlier_results[col] = {"count": 0, "values": [], "method": body.method}
+            continue
+
+        if body.method == "iqr":
+            q1, q3 = df_col.quantile(0.25), df_col.quantile(0.75)
+            iqr = q3 - q1
+            mask = (df[col] < q1 - factor * iqr) | (df[col] > q3 + factor * iqr)
+        elif body.method == "zscore":
+            mean_val, std_val = df_col.mean(), df_col.std()
+            mask = (((df[col] - mean_val) / std_val).abs() > factor) if std_val > 0 else pd.Series([False] * len(df))
+        else:
+            continue
+
+        outlier_results[col] = {
+            "count": int(mask.sum()),
+            "values": df.loc[mask, col].dropna().astype(float).tolist()[:100],
+            "method": body.method,
+        }
+
+    return {"outlier_results": outlier_results}
 
 
-@router.post("/outliers", response_model=PreprocessingResponse)
+@router.post("/outliers/{project_id}", response_model=PreprocessingResponse)
 async def outliers(
-  body: OutliersRequest,
-  db: AsyncSession = Depends(get_db),
-):
-  try:
-    state = session_store.get_current()
-  except KeyError:
-    raise HTTPException(status_code=404, detail="No active session")
+    project_id: str,
+    body: OutliersRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Clips or removes outliers and updates the cached DataFrame."""
+    df = await _load_df_or_404(project_id, current_user, db)
 
-  if body.columns is not None and len(body.columns) == 0:
-    logger.warning("Empty columns array received in outliers request")
-    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+    if body.columns is not None and len(body.columns) == 0:
+        raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
-  logger.info(f"Outliers request - method: {body.method}, columns: {body.columns}")
+    try:
+        df_new = handle_outliers(df, body.method, body.columns)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-  try:
-    df_new = handle_outliers(state.df, body.method, body.columns)
-    logger.info(f"Successfully handled outliers. Original shape: {state.df.shape}, New shape: {df_new.shape}")
-  except Exception as e:
-    logger.error(f"Outliers handling failed: {str(e)}")
-    raise HTTPException(status_code=400, detail=f"Outliers handling failed: {str(e)}")
-  
-  state = session_store.update_df(state.session_id, df_new)
-
-  await _sync_session_to_db(state, db)
-  return df_to_session_payload(state)
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "outliers", body.model_dump(), df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
-@router.post("/encoding", response_model=PreprocessingResponse)
+@router.post("/encoding/{project_id}", response_model=PreprocessingResponse)
 async def encoding(
-  body: EncodingRequest,
-  db: AsyncSession = Depends(get_db),
-):
-  try:
-    state = session_store.get_current()
-  except KeyError:
-    raise HTTPException(status_code=404, detail="No active session")
+    project_id: str,
+    body: EncodingRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Encodes categorical columns using the specified method."""
+    df = await _load_df_or_404(project_id, current_user, db)
 
-  # Validate that columns are provided when not using global settings
-  if body.columns is not None and len(body.columns) == 0:
-    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+    if body.columns is not None and len(body.columns) == 0:
+        raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
-  logger.info(f"Encoding request - method: {body.method}, columns: {body.columns}")
+    try:
+        df_new = encode_columns(df, body.method, body.columns)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-  try:
-    df_new = encode_columns(state.df, body.method, body.columns)
-    logger.info(f"Successfully encoded columns. Original shape: {state.df.shape}, New shape: {df_new.shape}")
-  except KeyError as e:
-    logger.error(f"Column not found: {str(e)}")
-    raise HTTPException(status_code=400, detail=f"Column not found: {str(e)}")
-  except Exception as e:
-    logger.error(f"Encoding failed: {str(e)}")
-    raise HTTPException(status_code=400, detail=f"Encoding failed: {str(e)}")
-  
-  state = session_store.update_df(state.session_id, df_new)
-
-  await _sync_session_to_db(state, db)
-  return df_to_session_payload(state)
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "encoding", body.model_dump(), df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
-@router.post("/scaling", response_model=PreprocessingResponse)
+@router.post("/scaling/{project_id}", response_model=PreprocessingResponse)
 async def scaling(
-  body: ScalingRequest,
-  db: AsyncSession = Depends(get_db),
-):
-  try:
-    state = session_store.get_current()
-  except KeyError:
-    raise HTTPException(status_code=404, detail="No active session")
+    project_id: str,
+    body: ScalingRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Scales numeric columns using the specified scaler."""
+    df = await _load_df_or_404(project_id, current_user, db)
 
-  if body.columns is not None and len(body.columns) == 0:
-    logger.warning("Empty columns array received in scaling request")
-    raise HTTPException(status_code=400, detail="Columns array cannot be empty. Either provide specific columns or set to null for global settings.")
+    if body.columns is not None and len(body.columns) == 0:
+        raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
-  logger.info(f"Scaling request - method: {body.method}, columns: {body.columns}")
+    try:
+        df_new = scale_columns(df, body.method, body.columns)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-  try:
-    df_new = scale_columns(state.df, body.method, body.columns)
-    logger.info(f"Successfully scaled columns. Original shape: {state.df.shape}, New shape: {df_new.shape}")
-  except Exception as e:
-    logger.error(f"Scaling failed: {str(e)}")
-    raise HTTPException(status_code=400, detail=f"Scaling failed: {str(e)}")
-  
-  state = session_store.update_df(state.session_id, df_new)
-
-  await _sync_session_to_db(state, db)
-  return df_to_session_payload(state)
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "scaling", body.model_dump(), df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
-@router.get("/correlation", response_model=CorrelationResponse)
-async def correlation():
-  try:
-    state = session_store.get_current()
-  except KeyError:
-    raise HTTPException(status_code=404, detail="No active session")
-
-  matrix, cols = compute_correlation(state.df)
-  return {"correlation_matrix": matrix, "columns": cols}
+@router.get("/correlation/{project_id}", response_model=CorrelationResponse)
+async def correlation(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Computes the Pearson correlation matrix for all numeric columns."""
+    df = await _load_df_or_404(project_id, current_user, db)
+    matrix, cols = compute_correlation(df)
+    return {"correlation_matrix": matrix, "columns": cols}

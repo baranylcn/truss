@@ -1,53 +1,85 @@
-from sqlalchemy import Column, String, Integer, JSON, ARRAY, TIMESTAMP, ForeignKey, text
+from sqlalchemy import Column, String, Integer, JSON, ARRAY, TIMESTAMP, ForeignKey, Boolean, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.services.db import Base
 
 
-class MLSessions(Base):
-    __tablename__ = "ml_sessions"
+class User(Base):
+    __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    session_id = Column(String, unique=True, nullable=False)
-    user_id = Column(UUID(as_uuid=True), nullable=True)
-    filename = Column(String, nullable=True)
-    columns = Column(JSON, nullable=False)
-    shape = Column(ARRAY(Integer), nullable=False)
-    dtypes = Column(JSON, nullable=False)
-    missing_values = Column(JSON, nullable=False)
-    current_data = Column(JSON, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    email = Column(String, unique=True, nullable=False)
+    plan = Column(String, default="free", nullable=False)
+    api_key_hash = Column(String, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
 
-    snapshots = relationship("MLSessionSnapshots", back_populates="session", cascade="all, delete-orphan")
-    models = relationship("MLTrainedModels", back_populates="session", cascade="all, delete-orphan")
+    projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
 
 
-class MLSessionSnapshots(Base):
-    __tablename__ = "ml_session_snapshots"
+class Project(Base):
+    __tablename__ = "projects"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    session_id = Column(UUID(as_uuid=True), ForeignKey("ml_sessions.id", ondelete="CASCADE"), nullable=False)
-    step_id = Column(Integer, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    filename = Column(String, nullable=True)
+    status = Column(String, default="active", nullable=False)
+    current_step = Column(String, default="upload", nullable=False)
+    columns = Column(JSON, nullable=True)
+    shape = Column(ARRAY(Integer), nullable=True)
+    dtypes = Column(JSON, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
+
+    user = relationship("User", back_populates="projects")
+    pipeline_states = relationship("PipelineState", back_populates="project", cascade="all, delete-orphan")
+    trained_models = relationship("TrainedModel", back_populates="project", cascade="all, delete-orphan")
+    ml_jobs = relationship("MLJob", back_populates="project", cascade="all, delete-orphan")
+
+
+class PipelineState(Base):
+    __tablename__ = "pipeline_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     step_name = Column(String, nullable=False)
-    data_snapshot = Column(JSON, nullable=False)
-    meta = Column("metadata", JSON, nullable=True)
+    config = Column(JSON, nullable=True)
+    data_snapshot = Column(JSON, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
 
-    session = relationship("MLSessions", back_populates="snapshots")
+    project = relationship("Project", back_populates="pipeline_states")
 
 
-class MLTrainedModels(Base):
-    __tablename__ = "ml_trained_models"
+class TrainedModel(Base):
+    __tablename__ = "trained_models"
 
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    session_id = Column(UUID(as_uuid=True), ForeignKey("ml_sessions.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     model_type = Column(String, nullable=False)
     target_column = Column(String, nullable=False)
-    metrics = Column(JSON, nullable=False)
-    parameters = Column(JSON, nullable=False)
+    task_type = Column(String, nullable=False)
+    metrics = Column(JSON, nullable=True)
+    parameters = Column(JSON, nullable=True)
     model_path = Column(String, nullable=True)
+    is_best = Column(Boolean, default=False, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
 
-    session = relationship("MLSessions", back_populates="models")
+    project = relationship("Project", back_populates="trained_models")
+
+
+class MLJob(Base):
+    __tablename__ = "ml_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    job_type = Column(String, nullable=False)
+    celery_task_id = Column(String, nullable=True)
+    status = Column(String, default="pending", nullable=False)
+    result = Column(JSON, nullable=True)
+    error_message = Column(String, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
+
+    project = relationship("Project", back_populates="ml_jobs")

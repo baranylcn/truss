@@ -4,15 +4,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "GroveML"
+    PROJECT_NAME: str = "Truss"
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
-        "https://www.grovemlplatform.com",
-        "https://grovemlplatform.com",
+        "https://www.trussplatform.com",
+        "https://trussplatform.com",
         "http://localhost:5173",
         "http://localhost:3000"
     ]
 
     DATABASE_URL: str
+
+    SUPABASE_URL: str = ""
+    SUPABASE_JWT_SECRET: str = ""
+
+    REDIS_URL: str = ""
 
     @field_validator('BACKEND_CORS_ORIGINS', mode='before')
     @classmethod
