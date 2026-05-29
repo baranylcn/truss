@@ -86,7 +86,7 @@ async def missing_values(
     categorical_method = body.categorical_method or "mode"
 
     try:
-        df_new = handle_missing_values(df, numerical_method, categorical_method, body.columns)
+        df_new = handle_missing_values(df, numerical_method, categorical_method, body.columns, body.column_methods)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -158,7 +158,7 @@ async def outliers(
         raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
     try:
-        df_new = handle_outliers(df, body.method, body.columns)
+        df_new = handle_outliers(df, body.method, body.columns, body.action)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -181,7 +181,7 @@ async def encoding(
         raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
     try:
-        df_new = encode_columns(df, body.method, body.columns)
+        df_new = encode_columns(df, body.method, body.columns, body.column_methods)
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -204,7 +204,7 @@ async def scaling(
         raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
     try:
-        df_new = scale_columns(df, body.method, body.columns)
+        df_new = scale_columns(df, body.method, body.columns, body.column_methods)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

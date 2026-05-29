@@ -88,51 +88,62 @@ def analyze_dataframe(df: pd.DataFrame) -> List[Dict[str, Any]]:
   return analysis
 
 
-def handle_missing_values(df: pd.DataFrame, numerical_method: str, categorical_method: str, columns: List[str] | None) -> pd.DataFrame:
-  # If columns is None, process only columns with missing values (for efficiency)
-  # If columns is provided, process those specific columns
+def handle_missing_values(
+  df: pd.DataFrame,
+  numerical_method: str,
+  categorical_method: str,
+  columns: List[str] | None,
+  column_methods: Dict[str, str] | None = None,
+) -> pd.DataFrame:
   if columns is None:
     target_cols = [col for col in df.columns if df[col].isna().any()]
   else:
     target_cols = columns if columns else []
-  
-  # If no columns to process, return original dataframe
+
   if not target_cols:
     return df
-    
-  if numerical_method == "drop":
-    return df.dropna(subset=target_cols)
 
   df_new = df.copy()
-  
-  if numerical_method in {"mean", "median"}:
-    for col in target_cols:
-      if pd.api.types.is_numeric_dtype(df_new[col]):
-        if numerical_method == "mean":
-          fill_val = df_new[col].mean()
-        else:
-          fill_val = df_new[col].median()
-        df_new[col] = df_new[col].fillna(fill_val)
-      else:
-        if categorical_method == "mode":
-          mode_series = df_new[col].mode()
-          if not mode_series.empty:
-            df_new[col] = df_new[col].fillna(mode_series.iloc[0])
-        elif categorical_method == "drop":
-          df_new = df_new.dropna(subset=[col])
-    return df_new
+  drop_subset: List[str] = []
 
-  if numerical_method == "mode":
-    for col in target_cols:
+  for col in target_cols:
+    if column_methods and col in column_methods:
+      method = column_methods[col]
+    elif pd.api.types.is_numeric_dtype(df_new[col]):
+      method = numerical_method
+    else:
+      method = categorical_method
+
+    if method == "none":
+      continue
+    elif method == "drop":
+      drop_subset.append(col)
+    elif method == "mean":
+      if pd.api.types.is_numeric_dtype(df_new[col]):
+        df_new[col] = df_new[col].fillna(df_new[col].mean())
+    elif method == "median":
+      if pd.api.types.is_numeric_dtype(df_new[col]):
+        df_new[col] = df_new[col].fillna(df_new[col].median())
+    elif method == "mode":
       mode_series = df_new[col].mode()
       if not mode_series.empty:
         df_new[col] = df_new[col].fillna(mode_series.iloc[0])
-    return df_new
+
+  if drop_subset:
+    df_new = df_new.dropna(subset=drop_subset)
 
   return df_new
 
 
-def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
+def handle_outliers(
+  df: pd.DataFrame,
+  method: str,
+  columns: List[str] | None,
+  action: str = "clip",
+) -> pd.DataFrame:
+  if action == "none":
+    return df
+
   if columns is None:
     target_cols = [
       c for c in df.columns
@@ -140,9 +151,9 @@ def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) ->
     ]
   else:
     target_cols = columns if columns else []
-  
+
   df_new = df.copy()
-  
+
   if not target_cols:
     return df_new
 
@@ -155,65 +166,99 @@ def handle_outliers(df: pd.DataFrame, method: str, columns: List[str] | None) ->
       iqr = q3 - q1
       lower = q1 - 1.5 * iqr
       upper = q3 + 1.5 * iqr
-      df_new[col] = df_new[col].clip(lower, upper)
+      if action == "clip":
+        df_new[col] = df_new[col].clip(lower, upper)
+      elif action == "drop":
+        mask = (df_new[col] < lower) | (df_new[col] > upper)
+        df_new = df_new[~mask | df_new[col].isna()]
 
   elif method == "zscore":
     for col in target_cols:
       if not pd.api.types.is_numeric_dtype(df_new[col]) or pd.api.types.is_bool_dtype(df_new[col]):
         continue
-      mean = df_new[col].mean()
-      std = df_new[col].std()
-      if std == 0:
+      mean_val = df_new[col].mean()
+      std_val = df_new[col].std()
+      if std_val == 0:
         continue
-      z = (df_new[col] - mean) / std
-      df_new = df_new[(z.abs() <= 3) | z.isna()]
+      z = (df_new[col] - mean_val) / std_val
+      if action == "clip":
+        df_new[col] = df_new[col].clip(mean_val - 3 * std_val, mean_val + 3 * std_val)
+      elif action == "drop":
+        df_new = df_new[(z.abs() <= 3) | z.isna()]
 
   return df_new
 
 
-def encode_columns(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
+def encode_columns(
+  df: pd.DataFrame,
+  method: str,
+  columns: List[str] | None,
+  column_methods: Dict[str, str] | None = None,
+) -> pd.DataFrame:
   df_new = df.copy()
-  
+
   if columns is None:
     target_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
   else:
     target_cols = [
-      c for c in columns 
+      c for c in columns
       if c in df.columns and not pd.api.types.is_numeric_dtype(df[c])
     ]
-  
+
   if not target_cols:
     return df_new
-  
-  if method in {"label", "ordinal"}:
-    for col in target_cols:
-      df_new[col] = df_new[col].astype("category").cat.codes
-    return df_new
-  if method == "onehot":
-    return pd.get_dummies(df_new, columns=target_cols, drop_first=False)
+
+  onehot_cols: List[str] = []
+  label_cols: List[str] = []
+
+  for col in target_cols:
+    col_method = (column_methods or {}).get(col, method)
+    if col_method == "onehot":
+      onehot_cols.append(col)
+    else:
+      label_cols.append(col)
+
+  for col in label_cols:
+    df_new[col] = df_new[col].astype("category").cat.codes
+
+  if onehot_cols:
+    df_new = pd.get_dummies(df_new, columns=onehot_cols, drop_first=False)
+
   return df_new
 
 
-def scale_columns(df: pd.DataFrame, method: str, columns: List[str] | None) -> pd.DataFrame:
+def scale_columns(
+  df: pd.DataFrame,
+  method: str,
+  columns: List[str] | None,
+  column_methods: Dict[str, str] | None = None,
+) -> pd.DataFrame:
   df_new = df.copy()
+
   if columns is None:
     target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
   else:
     target_cols = columns if columns else []
-  
+
   if not target_cols:
     return df_new
 
-  if method == "standard":
-    scaler = StandardScaler()
-  elif method == "minmax":
-    scaler = MinMaxScaler()
-  elif method == "robust":
-    scaler = RobustScaler()
-  else:
-    return df_new
+  scaler_map = {
+    "standard": StandardScaler,
+    "minmax": MinMaxScaler,
+    "robust": RobustScaler,
+  }
 
-  df_new[target_cols] = scaler.fit_transform(df_new[target_cols])
+  groups: Dict[str, List[str]] = {"standard": [], "minmax": [], "robust": []}
+  for col in target_cols:
+    col_method = (column_methods or {}).get(col, method)
+    if col_method in groups:
+      groups[col_method].append(col)
+
+  for scaler_type, cols in groups.items():
+    if cols:
+      df_new[cols] = scaler_map[scaler_type]().fit_transform(df_new[cols])
+
   return df_new
 
 
