@@ -41,14 +41,7 @@ export default function LoginPage({ onNavigate }: LoginPageProps) {
 
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-6 sm:mb-8">
-          <div className="w-9 h-9 bg-[#f97316] rounded flex items-center justify-center flex-shrink-0">
-            <div className="grid grid-cols-2 gap-0.5">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="w-1.5 h-1.5 bg-white rounded-sm" />
-              ))}
-            </div>
-          </div>
-          <span className="text-white font-bold text-2xl tracking-tight">Truss</span>
+          <img src="/truss_logo.png" alt="Truss" className="h-10 w-auto object-contain" />
         </div>
 
         {/* Heading */}

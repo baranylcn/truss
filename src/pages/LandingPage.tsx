@@ -71,14 +71,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       <nav className="border-b border-white/[0.06] fixed top-0 left-0 right-0 z-40 bg-[#0a0f1e]/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-[#f97316] rounded flex items-center justify-center flex-shrink-0">
-              <div className="grid grid-cols-2 gap-0.5">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="w-1.5 h-1.5 bg-white rounded-sm" />
-                ))}
-              </div>
-            </div>
-            <span className="text-white font-bold text-base tracking-tight">Truss</span>
+            <img src="/truss_logo.png" alt="Truss" className="h-7 w-auto object-contain" />
           </div>
 
           <div className="hidden md:flex items-center gap-7">
@@ -428,13 +421,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       <footer className="border-t border-white/[0.06] bg-[#0a0f1e] py-8">
         <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 bg-[#f97316] rounded flex items-center justify-center">
-              <div className="grid grid-cols-2 gap-0.5">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="w-1 h-1 bg-white rounded-sm" />
-                ))}
-              </div>
-            </div>
+            <img src="/truss_logo.png" alt="Truss" className="h-5 w-auto object-contain opacity-40" />
             <span className="text-white/40 text-xs font-semibold uppercase tracking-widest">Truss</span>
             <span className="text-white/20 text-xs ml-2">© 2025. Build with precision.</span>
           </div>

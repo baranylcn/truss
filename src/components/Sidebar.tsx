@@ -79,14 +79,7 @@ export default function Sidebar({ currentPage, currentStep, onPageChange, onStep
           onClick={() => onPageChange('dashboard')}
           className="flex items-center gap-2 group cursor-pointer"
         >
-          <div className="w-7 h-7 bg-[#f97316] rounded flex items-center justify-center flex-shrink-0">
-            <div className="grid grid-cols-2 gap-0.5">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="w-1.5 h-1.5 bg-white rounded-sm" />
-              ))}
-            </div>
-          </div>
-          <span className="text-white font-bold text-base tracking-tight">Truss</span>
+          <img src="/truss_logo.png" alt="Truss" className="h-7 w-auto object-contain" />
         </button>
       </div>
 
