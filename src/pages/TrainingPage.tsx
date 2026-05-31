@@ -144,7 +144,12 @@ export default function TrainingPage({ projectId, onNext }: TrainingPageProps) {
   function handleModelSelect(model: ModelType) {
     setSelectedModel(model)
     setHyperparams({})
+    // Logistic regression is classification-only; lock task type
+    if (model === 'logistic_regression') setTaskType('classification')
   }
+
+  // Derived: whether task type is user-editable for the selected model
+  const taskTypeLocked = selectedModel === 'logistic_regression'
 
   function getParamValue(key: string, def: string | number | boolean): string {
     return hyperparams[key] !== undefined ? hyperparams[key] : String(def)
@@ -217,21 +222,25 @@ export default function TrainingPage({ projectId, onNext }: TrainingPageProps) {
                 </div>
               )}
             </div>
-            <div className="bg-[#111827] border border-[#2d3748] rounded-lg p-4">
+            <div className={`bg-[#111827] border border-[#2d3748] rounded-lg p-4 ${taskTypeLocked ? 'opacity-60' : ''}`}>
               <p className="text-xs text-[#64748b] mb-2">Task Type</p>
               <div className="flex gap-2 mt-1">
                 {(['classification', 'regression'] as TaskType[]).map(t => (
-                  <button key={t} onClick={() => setTaskType(t)}
+                  <button key={t}
+                    onClick={() => !taskTypeLocked && setTaskType(t)}
+                    disabled={taskTypeLocked}
                     className={`flex-1 py-1.5 rounded text-xs font-semibold border transition-all ${
                       taskType === t
                         ? 'bg-[#f97316] border-[#f97316] text-white'
                         : 'border-[#2d3748] text-[#64748b] hover:border-[#374151] hover:text-white'
-                    }`}>
+                    } disabled:cursor-not-allowed`}>
                     {t === 'classification' ? 'Classification' : 'Regression'}
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] text-[#4a5568] mt-2">Auto-detected · override if wrong</p>
+              <p className="text-[10px] text-[#4a5568] mt-2">
+                {taskTypeLocked ? 'Logistic Regression is classification-only' : 'Auto-detected · override if wrong'}
+              </p>
             </div>
           </div>
 
