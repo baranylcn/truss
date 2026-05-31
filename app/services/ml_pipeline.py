@@ -17,6 +17,7 @@ from sklearn.metrics import (
 )
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
+from xgboost import XGBClassifier, XGBRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -140,6 +141,7 @@ def handle_outliers(
   method: str,
   columns: List[str] | None,
   action: str = "clip",
+  factor: float = 1.5,
 ) -> pd.DataFrame:
   if action == "none":
     return df
@@ -164,8 +166,8 @@ def handle_outliers(
       q1 = df_new[col].quantile(0.25)
       q3 = df_new[col].quantile(0.75)
       iqr = q3 - q1
-      lower = q1 - 1.5 * iqr
-      upper = q3 + 1.5 * iqr
+      lower = q1 - factor * iqr
+      upper = q3 + factor * iqr
       if action == "clip":
         df_new[col] = df_new[col].clip(lower, upper)
       elif action == "drop":
@@ -182,9 +184,9 @@ def handle_outliers(
         continue
       z = (df_new[col] - mean_val) / std_val
       if action == "clip":
-        df_new[col] = df_new[col].clip(mean_val - 3 * std_val, mean_val + 3 * std_val)
+        df_new[col] = df_new[col].clip(mean_val - factor * std_val, mean_val + factor * std_val)
       elif action == "drop":
-        df_new = df_new[(z.abs() <= 3) | z.isna()]
+        df_new = df_new[(z.abs() <= factor) | z.isna()]
 
   return df_new
 
@@ -276,11 +278,20 @@ def compute_correlation(df: pd.DataFrame) -> Tuple[Dict[str, Dict[str, float]], 
   return matrix, list(corr.columns)
 
 
+def _get_hp(hp: dict, key: str, default: Any) -> Any:
+  val = hp.get(key, default)
+  if val == "" or val is None:
+    return default
+  return val
+
+
 def train_model(
   df: pd.DataFrame,
   model_type: str,
   target_column: str,
   test_size: float,
+  hyperparameters: dict | None = None,
+  task_type_override: str | None = None,
 ) -> Tuple[Any, str, Dict[str, Any]]:
   """Trains a model and returns (pipeline, task_type, metrics)."""
   if target_column not in df.columns:
@@ -301,16 +312,61 @@ def train_model(
     remainder="drop",
   )
 
-  task_type = "regression" if pd.api.types.is_numeric_dtype(y) else "classification"
+  if task_type_override in ("classification", "regression"):
+    task_type = task_type_override
+  else:
+    task_type = "regression" if pd.api.types.is_numeric_dtype(y) else "classification"
+  hp = hyperparameters or {}
 
   if model_type == "linear_regression" and task_type == "regression":
     base_model = LinearRegression()
-  elif model_type == "logistic_regression" and task_type == "classification":
-    base_model = LogisticRegression(max_iter=1000)
+
+  elif model_type == "logistic_regression":
+    penalty = _get_hp(hp, "penalty", "l2")
+    l1_ratio = float(_get_hp(hp, "l1_ratio", 0.5)) if penalty == "elasticnet" else None
+    base_model = LogisticRegression(
+      C=float(_get_hp(hp, "C", 1.0)),
+      penalty=penalty,
+      solver=_get_hp(hp, "solver", "lbfgs"),
+      max_iter=int(_get_hp(hp, "max_iter", 1000)),
+      class_weight=_get_hp(hp, "class_weight", None) or None,
+      fit_intercept=bool(_get_hp(hp, "fit_intercept", True)),
+      tol=float(_get_hp(hp, "tol", 1e-4)),
+      l1_ratio=l1_ratio,
+    )
+
   elif model_type == "random_forest":
-    base_model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
+    base_model = (RandomForestClassifier if task_type == "classification" else RandomForestRegressor)(
+      n_estimators=int(_get_hp(hp, "n_estimators", 100)),
+      max_depth=int(_get_hp(hp, "max_depth", 10)) if _get_hp(hp, "max_depth", None) else None,
+      max_features=_get_hp(hp, "max_features", "sqrt"),
+      min_samples_split=int(_get_hp(hp, "min_samples_split", 2)),
+      min_samples_leaf=int(_get_hp(hp, "min_samples_leaf", 1)),
+      bootstrap=bool(_get_hp(hp, "bootstrap", True)),
+      criterion=_get_hp(hp, "criterion", "gini" if task_type == "classification" else "squared_error"),
+      oob_score=bool(_get_hp(hp, "oob_score", False)),
+      random_state=42,
+    )
+
+  elif model_type == "xgboost":
+    base_model = (XGBClassifier if task_type == "classification" else XGBRegressor)(
+      n_estimators=int(_get_hp(hp, "n_estimators", 100)),
+      max_depth=int(_get_hp(hp, "max_depth", 6)),
+      learning_rate=float(_get_hp(hp, "learning_rate", 0.1)),
+      subsample=float(_get_hp(hp, "subsample", 0.8)),
+      colsample_bytree=float(_get_hp(hp, "colsample_bytree", 1.0)),
+      min_child_weight=float(_get_hp(hp, "min_child_weight", 1)),
+      gamma=float(_get_hp(hp, "gamma", 0.0)),
+      reg_alpha=float(_get_hp(hp, "reg_alpha", 0.0)),
+      reg_lambda=float(_get_hp(hp, "reg_lambda", 1.0)),
+      scale_pos_weight=float(_get_hp(hp, "scale_pos_weight", 1.0)),
+      eval_metric="logloss" if task_type == "classification" else "rmse",
+      random_state=42,
+      verbosity=0,
+    )
+
   else:
-    base_model = RandomForestClassifier() if task_type == "classification" else RandomForestRegressor()
+    base_model = RandomForestClassifier(random_state=42) if task_type == "classification" else RandomForestRegressor(random_state=42)
 
   pipe = Pipeline(steps=[("preprocess", preprocessor), ("model", base_model)])
 

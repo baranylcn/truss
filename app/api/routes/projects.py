@@ -1,9 +1,11 @@
+import re
 import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
+from sqlalchemy.exc import DBAPIError
 
 from app.core.auth import get_current_user
 from app.core.redis import delete_dataframe
@@ -45,7 +47,14 @@ async def create_project(
         current_step="upload",
     )
     db.add(project)
-    await db.commit()
+    try:
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        raw = str(exc.orig)
+        # strip SQLAlchemy/asyncpg class prefix: "<class '...Error'>: message"
+        msg = re.sub(r"^<class '[^']*'>:\s*", "", raw)
+        raise HTTPException(status_code=403, detail=msg) from exc
     await db.refresh(project)
     return project
 

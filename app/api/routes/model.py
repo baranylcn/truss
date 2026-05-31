@@ -47,6 +47,8 @@ async def start_training(
             model_type=body.model_type,
             target_column=body.target_column,
             test_size=body.test_size,
+            hyperparameters=body.hyperparameters,
+            task_type_override=body.task_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -133,11 +135,12 @@ async def evaluate_model(
         for m in models
     ]
 
+    is_regression = best.task_type == "regression"
     return {
         "accuracy": float(best_metrics.get("accuracy", 0.0)),
-        "precision": float(best_metrics.get("precision", 0.0)),
-        "recall": float(best_metrics.get("recall", 0.0)),
-        "f1_score": float(best_metrics.get("f1_score", 0.0)),
+        "precision": None if is_regression else float(best_metrics.get("precision", 0.0)),
+        "recall": None if is_regression else float(best_metrics.get("recall", 0.0)),
+        "f1_score": None if is_regression else float(best_metrics.get("f1_score", 0.0)),
         "problem_type": best.task_type,
         "best_model": best.model_type,
         "target_column": best.target_column,

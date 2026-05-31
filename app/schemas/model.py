@@ -7,6 +7,7 @@ class TrainRequest(BaseModel):
   target_column: str
   test_size: float = 0.2
   hyperparameters: dict = {}
+  task_type: Optional[str] = None  # "classification" | "regression" | None (auto-detect)
 
 
 class TrainResponse(BaseModel):
@@ -25,9 +26,9 @@ class ModelResult(BaseModel):
 
 class EvaluateResponse(BaseModel):
   accuracy: float
-  precision: float
-  recall: float
-  f1_score: float
+  precision: Optional[float] = None
+  recall: Optional[float] = None
+  f1_score: Optional[float] = None
   problem_type: Optional[str] = None
   best_model: Optional[str] = None
   target_column: Optional[str] = None

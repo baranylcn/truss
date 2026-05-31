@@ -1,5 +1,6 @@
 import redis.asyncio as aioredis
 import pandas as pd
+from io import StringIO
 
 from app.core.config import settings
 
@@ -20,7 +21,7 @@ async def get_dataframe(project_id: str) -> pd.DataFrame | None:
     data = await r.get(f"df:{project_id}")
     if data is None:
         return None
-    return pd.read_json(data, orient="split")
+    return pd.read_json(StringIO(data), orient="split")
 
 
 async def set_dataframe(project_id: str, df: pd.DataFrame, ttl: int = 86400) -> None:

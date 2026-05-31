@@ -158,7 +158,8 @@ async def outliers(
         raise HTTPException(status_code=400, detail="Columns array cannot be empty")
 
     try:
-        df_new = handle_outliers(df, body.method, body.columns, body.action)
+        factor = body.factor if body.factor is not None else (1.5 if body.method == "iqr" else 3.0)
+        df_new = handle_outliers(df, body.method, body.columns, body.action, factor)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
