@@ -79,7 +79,7 @@ export default function Sidebar({ currentPage, currentStep, onPageChange, onStep
           onClick={() => onPageChange('dashboard')}
           className="flex items-center gap-2 group cursor-pointer"
         >
-          <img src="/truss_logo.png" alt="Truss" className="h-7 w-auto object-contain" />
+          <img src="/truss_logo.png" alt="Truss" className="h-12 w-auto object-contain" />
         </button>
       </div>
 

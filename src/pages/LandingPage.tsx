@@ -71,7 +71,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       <nav className="border-b border-white/[0.06] fixed top-0 left-0 right-0 z-40 bg-[#0a0f1e]/95 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img src="/truss_logo.png" alt="Truss" className="h-7 w-auto object-contain" />
+            <img src="/truss_logo.png" alt="Truss" className="h-12 w-auto object-contain" />
           </div>
 
           <div className="hidden md:flex items-center gap-7">
