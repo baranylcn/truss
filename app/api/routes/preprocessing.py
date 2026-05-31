@@ -214,6 +214,30 @@ async def scaling(
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
+@router.post("/drop-columns/{project_id}", response_model=PreprocessingResponse)
+async def drop_columns(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Drops the specified columns from the cached DataFrame."""
+    columns: list[str] = body.get("columns", [])
+    if not columns:
+        raise HTTPException(status_code=400, detail="No columns specified")
+
+    df = await _load_df_or_404(project_id, current_user, db)
+
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Columns not found: {', '.join(missing)}")
+
+    df_new = df.drop(columns=columns)
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "correlation", {"dropped_columns": columns}, df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
+
+
 @router.get("/correlation/{project_id}", response_model=CorrelationResponse)
 async def correlation(
     project_id: str,

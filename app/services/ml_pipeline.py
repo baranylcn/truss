@@ -18,7 +18,7 @@ from sklearn.metrics import (
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from xgboost import XGBClassifier, XGBRegressor
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder, LabelEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
@@ -160,6 +160,7 @@ def handle_outliers(
     return df_new
 
   if method == "iqr":
+    drop_mask = pd.Series(False, index=df_new.index)
     for col in target_cols:
       if not pd.api.types.is_numeric_dtype(df_new[col]) or pd.api.types.is_bool_dtype(df_new[col]):
         continue
@@ -171,10 +172,13 @@ def handle_outliers(
       if action == "clip":
         df_new[col] = df_new[col].clip(lower, upper)
       elif action == "drop":
-        mask = (df_new[col] < lower) | (df_new[col] > upper)
-        df_new = df_new[~mask | df_new[col].isna()]
+        col_mask = (df_new[col] < lower) | (df_new[col] > upper)
+        drop_mask = drop_mask | col_mask.fillna(False)
+    if action == "drop":
+      df_new = df_new[~drop_mask]
 
   elif method == "zscore":
+    drop_mask = pd.Series(False, index=df_new.index)
     for col in target_cols:
       if not pd.api.types.is_numeric_dtype(df_new[col]) or pd.api.types.is_bool_dtype(df_new[col]):
         continue
@@ -186,7 +190,9 @@ def handle_outliers(
       if action == "clip":
         df_new[col] = df_new[col].clip(mean_val - factor * std_val, mean_val + factor * std_val)
       elif action == "drop":
-        df_new = df_new[(z.abs() <= factor) | z.isna()]
+        drop_mask = drop_mask | (z.abs() > factor).fillna(False)
+    if action == "drop":
+      df_new = df_new[~drop_mask]
 
   return df_new
 
@@ -212,19 +218,34 @@ def encode_columns(
 
   onehot_cols: List[str] = []
   label_cols: List[str] = []
+  ordinal_cols: List[str] = []
 
   for col in target_cols:
     col_method = (column_methods or {}).get(col, method)
     if col_method == "onehot":
       onehot_cols.append(col)
+    elif col_method == "ordinal":
+      ordinal_cols.append(col)
     else:
       label_cols.append(col)
 
   for col in label_cols:
     df_new[col] = df_new[col].astype("category").cat.codes
 
+  for col in ordinal_cols:
+    # Ordinal: sort unique values alphabetically to establish a consistent order,
+    # then assign integer codes 0..N-1. Users can rely on lexicographic ordering;
+    # for a meaningful order they should pre-sort the categories before this step.
+    categories = sorted(df_new[col].dropna().unique().tolist(), key=str)
+    cat_dtype = pd.CategoricalDtype(categories=categories, ordered=True)
+    df_new[col] = df_new[col].astype(cat_dtype).cat.codes
+
   if onehot_cols:
     df_new = pd.get_dummies(df_new, columns=onehot_cols, drop_first=False)
+    # pd.get_dummies creates bool dtype in pandas 2.x; cast to int8 for sklearn compatibility
+    bool_cols = [c for c in df_new.columns if df_new[c].dtype == bool]
+    if bool_cols:
+      df_new[bool_cols] = df_new[bool_cols].astype(np.int8)
 
   return df_new
 
@@ -251,11 +272,13 @@ def scale_columns(
     "robust": RobustScaler,
   }
 
+  valid_methods = set(scaler_map.keys())
   groups: Dict[str, List[str]] = {"standard": [], "minmax": [], "robust": []}
   for col in target_cols:
     col_method = (column_methods or {}).get(col, method)
-    if col_method in groups:
-      groups[col_method].append(col)
+    if col_method not in valid_methods:
+      col_method = method if method in valid_methods else "standard"
+    groups[col_method].append(col)
 
   for scaler_type, cols in groups.items():
     if cols:
@@ -297,9 +320,26 @@ def train_model(
   if target_column not in df.columns:
     raise ValueError(f"Target column '{target_column}' not found in DataFrame")
 
+  logger.info(f"Training {model_type} | target='{target_column}' | columns={list(df.columns)}")
+
+  # Drop rows where target or any feature is NaN
   df_clean = df.dropna(subset=[target_column])
   X = df_clean.drop(columns=[target_column])
-  y = df_clean[target_column]
+  # Drop feature rows with NaN; warn but don't crash
+  rows_before = len(X)
+  X = X.dropna()
+  y = df_clean[target_column].loc[X.index]
+  if len(X) < rows_before:
+    logger.warning(f"Dropped {rows_before - len(X)} rows with NaN in features before training")
+
+  if len(X) < 10:
+    raise ValueError(f"Not enough clean rows to train ({len(X)} rows after NaN removal)")
+
+  # Ensure bool columns (from one-hot encoding) are int to avoid sklearn dtype issues
+  bool_cols = [c for c in X.columns if X[c].dtype == bool]
+  if bool_cols:
+    X = X.copy()
+    X[bool_cols] = X[bool_cols].astype(np.int8)
 
   cat_cols = [c for c in X.columns if not pd.api.types.is_numeric_dtype(X[c])]
   num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
@@ -316,6 +356,18 @@ def train_model(
     task_type = task_type_override
   else:
     task_type = "regression" if pd.api.types.is_numeric_dtype(y) else "classification"
+
+  # If classification, re-encode target to clean integer class labels 0, 1, 2, ...
+  # This handles scaled targets (e.g. 0/1 → -0.74/1.35 after StandardScaler).
+  # We keep the original class labels for display purposes.
+  label_encoder: LabelEncoder | None = None
+  if task_type == "classification":
+    label_encoder = LabelEncoder()
+    original_classes = [str(c) for c in sorted(y.unique())]
+    y = pd.Series(label_encoder.fit_transform(y), index=y.index, name=y.name)
+  else:
+    original_classes = []
+
   hp = hyperparameters or {}
 
   if model_type == "linear_regression" and task_type == "regression":
@@ -323,28 +375,40 @@ def train_model(
 
   elif model_type == "logistic_regression":
     penalty = _get_hp(hp, "penalty", "l2")
+    solver = _get_hp(hp, "solver", "lbfgs")
+    # Enforce penalty/solver compatibility
+    if penalty == "l1" and solver not in ("liblinear", "saga"):
+      solver = "liblinear"
+    elif penalty == "elasticnet" and solver != "saga":
+      solver = "saga"
+    elif penalty == "none" and solver == "liblinear":
+      solver = "lbfgs"
     l1_ratio = float(_get_hp(hp, "l1_ratio", 0.5)) if penalty == "elasticnet" else None
+    raw_cw = _get_hp(hp, "class_weight", None)
+    class_weight = raw_cw if raw_cw in ("balanced", None) else None
     base_model = LogisticRegression(
       C=float(_get_hp(hp, "C", 1.0)),
       penalty=penalty,
-      solver=_get_hp(hp, "solver", "lbfgs"),
+      solver=solver,
       max_iter=int(_get_hp(hp, "max_iter", 1000)),
-      class_weight=_get_hp(hp, "class_weight", None) or None,
+      class_weight=class_weight,
       fit_intercept=bool(_get_hp(hp, "fit_intercept", True)),
       tol=float(_get_hp(hp, "tol", 1e-4)),
       l1_ratio=l1_ratio,
     )
 
   elif model_type == "random_forest":
+    rf_bootstrap = bool(_get_hp(hp, "bootstrap", True))
+    rf_oob = bool(_get_hp(hp, "oob_score", False)) and rf_bootstrap  # oob_score requires bootstrap=True
     base_model = (RandomForestClassifier if task_type == "classification" else RandomForestRegressor)(
       n_estimators=int(_get_hp(hp, "n_estimators", 100)),
       max_depth=int(_get_hp(hp, "max_depth", 10)) if _get_hp(hp, "max_depth", None) else None,
       max_features=_get_hp(hp, "max_features", "sqrt"),
       min_samples_split=int(_get_hp(hp, "min_samples_split", 2)),
       min_samples_leaf=int(_get_hp(hp, "min_samples_leaf", 1)),
-      bootstrap=bool(_get_hp(hp, "bootstrap", True)),
+      bootstrap=rf_bootstrap,
       criterion=_get_hp(hp, "criterion", "gini" if task_type == "classification" else "squared_error"),
-      oob_score=bool(_get_hp(hp, "oob_score", False)),
+      oob_score=rf_oob,
       random_state=42,
     )
 
@@ -371,9 +435,15 @@ def train_model(
   pipe = Pipeline(steps=[("preprocess", preprocessor), ("model", base_model)])
 
   stratify = y if task_type == "classification" else None
-  X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=test_size, random_state=42, stratify=stratify
-  )
+  try:
+    X_train, X_test, y_train, y_test = train_test_split(
+      X, y, test_size=test_size, random_state=42, stratify=stratify
+    )
+  except ValueError:
+    # Fallback: skip stratification when minority class is too small
+    X_train, X_test, y_train, y_test = train_test_split(
+      X, y, test_size=test_size, random_state=42
+    )
 
   pipe.fit(X_train, y_train)
   y_pred = pipe.predict(X_test)
@@ -386,7 +456,7 @@ def train_model(
     metrics["f1_score"] = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))
     cm = confusion_matrix(y_test, y_pred)
     metrics["confusion_matrix"] = cm.tolist()
-    metrics["class_names"] = [str(c) for c in sorted(y.unique())]
+    metrics["class_names"] = original_classes  # original labels before LabelEncoder
   else:
     metrics["r2"] = float(r2_score(y_test, y_pred))
     metrics["rmse"] = float(root_mean_squared_error(y_test, y_pred))
@@ -394,23 +464,34 @@ def train_model(
     metrics["accuracy"] = metrics["r2"]
     metrics["f1_score"] = 0.0
 
-  # Feature importance (tree-based models)
+  # Feature importance (tree-based and linear models)
   try:
     model_step = pipe.named_steps["model"]
-    preprocessor = pipe.named_steps["preprocess"]
+    inner_preprocessor = pipe.named_steps["preprocess"]
+    try:
+      feat_names = list(inner_preprocessor.get_feature_names_out())
+      feat_names = [n.split("__", 1)[-1] for n in feat_names]
+    except Exception as name_exc:
+      logger.warning(f"get_feature_names_out failed, falling back to indices: {name_exc}")
+      feat_names = None
+
+    importances: np.ndarray | None = None
     if hasattr(model_step, "feature_importances_"):
-      try:
-        feat_names = list(preprocessor.get_feature_names_out())
-        feat_names = [n.split("__", 1)[-1] for n in feat_names]
-      except Exception:
-        feat_names = [f"feature_{i}" for i in range(len(model_step.feature_importances_))]
-      items = sorted(
-        zip(feat_names, model_step.feature_importances_),
-        key=lambda x: x[1],
-        reverse=True,
-      )
+      importances = model_step.feature_importances_
+    elif hasattr(model_step, "coef_"):
+      # Linear models: use absolute coefficient values as importance proxy
+      coef = np.array(model_step.coef_)
+      importances = np.abs(coef).mean(axis=0) if coef.ndim > 1 else np.abs(coef)
+
+    if importances is not None:
+      n_features = len(importances)
+      if feat_names is None or len(feat_names) != n_features:
+        feat_names = [f"feature_{i}" for i in range(n_features)]
+      total = importances.sum()
+      normalized = (importances / total) if total > 0 else importances
+      items = sorted(zip(feat_names, normalized), key=lambda x: x[1], reverse=True)
       metrics["feature_importance"] = {k: float(v) for k, v in items[:15]}
-  except Exception:
-    pass
+  except Exception as fi_exc:
+    logger.warning(f"Feature importance extraction failed: {fi_exc}")
 
   return pipe, task_type, metrics
