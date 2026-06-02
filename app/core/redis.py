@@ -1,6 +1,8 @@
+import json
 import redis.asyncio as aioredis
 import pandas as pd
 from io import StringIO
+from typing import Any
 
 from app.core.config import settings
 
@@ -25,12 +27,45 @@ async def get_dataframe(project_id: str) -> pd.DataFrame | None:
 
 
 async def set_dataframe(project_id: str, df: pd.DataFrame, ttl: int = 86400) -> None:
-    """Writes a DataFrame to Redis with a TTL (default 24 h)."""
+    """Writes a DataFrame to Redis with a TTL and invalidates derived caches."""
     r = get_redis()
-    await r.setex(f"df:{project_id}", ttl, df.to_json(orient="split"))
+    pipe = r.pipeline()
+    pipe.setex(f"df:{project_id}", ttl, df.to_json(orient="split"))
+    pipe.delete(f"analysis:{project_id}", f"correlation:{project_id}")
+    await pipe.execute()
 
 
 async def delete_dataframe(project_id: str) -> None:
-    """Removes the project DataFrame and metadata keys from Redis."""
+    """Removes the project DataFrame and all derived cache keys from Redis."""
     r = get_redis()
-    await r.delete(f"df:{project_id}", f"meta:{project_id}")
+    await r.delete(f"df:{project_id}", f"meta:{project_id}", f"analysis:{project_id}", f"correlation:{project_id}")
+
+
+async def get_analysis_cache(project_id: str) -> list[Any] | None:
+    """Returns cached analyze_dataframe result or None if not cached."""
+    r = get_redis()
+    data = await r.get(f"analysis:{project_id}")
+    if data is None:
+        return None
+    return json.loads(data)
+
+
+async def set_analysis_cache(project_id: str, analysis: list[Any], ttl: int = 86400) -> None:
+    """Caches analyze_dataframe result for the given project."""
+    r = get_redis()
+    await r.setex(f"analysis:{project_id}", ttl, json.dumps(analysis))
+
+
+async def get_correlation_cache(project_id: str) -> dict | None:
+    """Returns cached correlation matrix or None if not cached."""
+    r = get_redis()
+    data = await r.get(f"correlation:{project_id}")
+    if data is None:
+        return None
+    return json.loads(data)
+
+
+async def set_correlation_cache(project_id: str, payload: dict, ttl: int = 86400) -> None:
+    """Caches correlation matrix for the given project."""
+    r = get_redis()
+    await r.setex(f"correlation:{project_id}", ttl, json.dumps(payload))

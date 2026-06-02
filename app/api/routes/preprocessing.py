@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
-from app.core.redis import get_dataframe, set_dataframe
+from app.core.redis import get_dataframe, set_dataframe, get_correlation_cache, set_correlation_cache
 from app.services.db import get_db
 from app.services.models import User, Project, PipelineState
 from app.services.ml_pipeline import (
@@ -246,5 +246,12 @@ async def correlation(
 ) -> dict:
     """Computes the Pearson correlation matrix for all numeric columns."""
     df = await _load_df_or_404(project_id, current_user, db)
+
+    cached = await get_correlation_cache(project_id)
+    if cached is not None:
+        return cached
+
     matrix, cols = compute_correlation(df)
-    return {"correlation_matrix": matrix, "columns": cols}
+    payload = {"correlation_matrix": matrix, "columns": cols}
+    await set_correlation_cache(project_id, payload)
+    return payload

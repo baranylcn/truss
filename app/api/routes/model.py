@@ -1,5 +1,7 @@
 import uuid
+import asyncio
 import logging
+from functools import partial
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,13 +44,18 @@ async def start_training(
         raise HTTPException(status_code=404, detail="Project data not found in cache. Please re-upload.")
 
     try:
-        _pipeline, task_type, metrics = train_model(
-            df=df,
-            model_type=body.model_type,
-            target_column=body.target_column,
-            test_size=body.test_size,
-            hyperparameters=body.hyperparameters,
-            task_type_override=body.task_type,
+        loop = asyncio.get_running_loop()
+        _pipeline, task_type, metrics = await loop.run_in_executor(
+            None,
+            partial(
+                train_model,
+                df=df,
+                model_type=body.model_type,
+                target_column=body.target_column,
+                test_size=body.test_size,
+                hyperparameters=body.hyperparameters,
+                task_type_override=body.task_type,
+            ),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

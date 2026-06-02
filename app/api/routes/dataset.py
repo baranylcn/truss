@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
-from app.core.redis import get_dataframe, set_dataframe
+from app.core.redis import get_dataframe, set_dataframe, get_analysis_cache, set_analysis_cache
 from app.services.db import get_db
 from app.services.models import User, Project
 from app.services.ml_pipeline import df_to_payload, analyze_dataframe
@@ -95,7 +95,11 @@ async def analyze_dataset(
     if df is None:
         raise HTTPException(status_code=404, detail="Project data not found in cache. Please re-upload.")
 
-    analysis = analyze_dataframe(df)
+    analysis = await get_analysis_cache(project_id)
+    if analysis is None:
+        analysis = analyze_dataframe(df)
+        await set_analysis_cache(project_id, analysis)
+
     dataset_info = sanitize_for_json(df_to_payload(df, project_id))
     return {"analysis": analysis, "dataset_info": dataset_info}
 
