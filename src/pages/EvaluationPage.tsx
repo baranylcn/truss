@@ -17,7 +17,6 @@ export default function EvaluationPage({ projectId, onNext }: EvaluationPageProp
     // Retry a few times with backoff in case we arrive before the DB commit settles
     retry: 3,
     retryDelay: (attempt) => attempt * 800,
-    refetchOnMount: true,
   })
 
   const fmt = (v: number) => `${(v * 100).toFixed(1)}%`
