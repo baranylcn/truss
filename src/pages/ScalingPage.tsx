@@ -76,10 +76,6 @@ export default function ScalingPage({ projectId, onNext }: ScalingPageProps) {
 
   const applyMutation = useMutation({
     mutationFn: () => {
-      if (mode === 'per_column' && Object.keys(colScalers).length === 0) {
-        toast.error('Per-column mode is active but no columns have been configured. Set at least one column scaler or switch to Global mode.')
-        return Promise.reject(new Error('No per-column overrides set'))
-      }
       const cols = [...effectiveSelected]
       return preprocessingApi.scaling(projectId, {
         method: selectedScaler,
