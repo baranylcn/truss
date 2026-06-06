@@ -1,10 +1,14 @@
+import io
 import uuid
 import asyncio
 import logging
 from functools import partial
 from typing import List
 
+import joblib
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from sklearn.model_selection import train_test_split
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -236,3 +240,115 @@ async def optimize_model(
         "model_type": model_type,
         "strategy": body.strategy,
     }
+
+
+async def _get_best_model_and_df(project_id: str, current_user: User, db: AsyncSession):
+    result = await db.execute(
+        select(Project).where(Project.id == uuid.UUID(project_id), Project.user_id == current_user.id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    best_result = await db.execute(
+        select(TrainedModel)
+        .where(TrainedModel.project_id == uuid.UUID(project_id), TrainedModel.is_best == True)  # noqa: E712
+        .order_by(TrainedModel.created_at.desc())
+    )
+    best_model = best_result.scalar_one_or_none()
+    if best_model is None:
+        raise HTTPException(status_code=404, detail="No trained model found. Complete the Training step first.")
+
+    df = await get_dataframe(project_id)
+    if df is None:
+        raise HTTPException(status_code=404, detail="Project data not found in cache. Please re-upload.")
+
+    return best_model, df
+
+
+@router.get("/export/predictions/{project_id}")
+async def export_predictions(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Re-trains best model, runs inference on test split, returns CSV with actual vs predicted."""
+    best_model, df = await _get_best_model_and_df(project_id, current_user, db)
+
+    def _build_csv():
+        pipe, _, _ = train_model(
+            df=df,
+            model_type=best_model.model_type,
+            target_column=best_model.target_column,
+            test_size=0.2,
+            hyperparameters=best_model.parameters or {},
+            task_type_override=best_model.task_type,
+        )
+        import numpy as np
+        import pandas as pd
+        df_clean = df.dropna(subset=[best_model.target_column])
+        X = df_clean.drop(columns=[best_model.target_column]).dropna()
+        y = df_clean[best_model.target_column].loc[X.index]
+        bool_cols = [c for c in X.columns if X[c].dtype == bool]
+        if bool_cols:
+            X = X.copy()
+            X[bool_cols] = X[bool_cols].astype(np.int8)
+        _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        y_pred = pipe.predict(X_test)
+        out = X_test.copy()
+        out["actual"] = y_test.values
+        out["predicted"] = y_pred
+        buf = io.StringIO()
+        out.to_csv(buf, index=False)
+        return buf.getvalue()
+
+    loop = asyncio.get_running_loop()
+    try:
+        csv_content = await loop.run_in_executor(None, _build_csv)
+    except Exception as exc:
+        logger.exception(f"Prediction export failed for project {project_id}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {exc}")
+
+    filename = f"predictions_{project_id[:8]}.csv"
+    return StreamingResponse(
+        io.BytesIO(csv_content.encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.get("/export/model/{project_id}")
+async def export_model_file(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Re-trains best model with stored params and returns a joblib-serialized .pkl file."""
+    best_model, df = await _get_best_model_and_df(project_id, current_user, db)
+
+    def _build_pkl():
+        pipe, _, _ = train_model(
+            df=df,
+            model_type=best_model.model_type,
+            target_column=best_model.target_column,
+            test_size=0.2,
+            hyperparameters=best_model.parameters or {},
+            task_type_override=best_model.task_type,
+        )
+        buf = io.BytesIO()
+        joblib.dump(pipe, buf)
+        buf.seek(0)
+        return buf.read()
+
+    loop = asyncio.get_running_loop()
+    try:
+        model_bytes = await loop.run_in_executor(None, _build_pkl)
+    except Exception as exc:
+        logger.exception(f"Model export failed for project {project_id}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {exc}")
+
+    filename = f"{best_model.model_type}_{project_id[:8]}.pkl"
+    return StreamingResponse(
+        io.BytesIO(model_bytes),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
