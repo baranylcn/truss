@@ -12,6 +12,7 @@ import {
   Cpu,
   Activity,
   Zap,
+  Download,
   CheckCircle2,
   Circle,
   LogOut,
@@ -37,11 +38,12 @@ const PIPELINE_STEPS: { id: PipelineStep; label: string; icon: React.ReactNode }
   { id: 'training', label: 'Training', icon: <Cpu size={14} /> },
   { id: 'evaluation', label: 'Evaluation', icon: <Activity size={14} /> },
   { id: 'optimization', label: 'Optimization', icon: <Zap size={14} /> },
+  { id: 'export', label: 'Export', icon: <Download size={14} /> },
 ];
 
 const STEP_ORDER: PipelineStep[] = [
   'upload', 'analyze', 'missing-values', 'outliers', 'encoding',
-  'correlation', 'scaling', 'training', 'evaluation', 'optimization',
+  'correlation', 'scaling', 'training', 'evaluation', 'optimization', 'export',
 ];
 
 function getStepStatus(stepId: PipelineStep, currentStep: PipelineStep): StepStatus {

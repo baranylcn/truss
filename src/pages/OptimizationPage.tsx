@@ -348,8 +348,8 @@ export default function OptimizationPage({ projectId, onNext }: OptimizationPage
             : evalData ? `Best: ${evalData.best_model} — ${fmt(evalData.accuracy)}` : ''}
         </span>
         <div className="flex gap-3">
-          <button className="px-4 py-1.5 text-sm text-[#94a3b8] hover:text-white">Cancel</button>
-          <button onClick={() => onNext('optimization')} disabled={isPending}
+          <button className="px-4 py-1.5 text-sm text-[#94a3b8] hover:text-white">Skip</button>
+          <button onClick={() => onNext('export')} disabled={isPending}
             className="flex items-center gap-2 px-5 py-1.5 bg-[#f97316] hover:bg-[#ea6c0a] text-white text-sm font-semibold rounded disabled:opacity-50"
           >
             Finish Pipeline <ChevronRight size={15} />

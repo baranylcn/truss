@@ -1,4 +1,4 @@
-import { apiRequest } from './client'
+import { apiRequest, apiDownload } from './client'
 import type { TrainMetrics } from '../../types'
 
 interface TrainConfig {
@@ -70,4 +70,10 @@ export const modelApi = {
       method: 'POST',
       body: JSON.stringify(config),
     }),
+
+  exportPredictions: (projectId: string) =>
+    apiDownload(`/model/export/predictions/${projectId}`, `predictions_${projectId.slice(0, 8)}.csv`),
+
+  exportModel: (projectId: string, modelType: string) =>
+    apiDownload(`/model/export/model/${projectId}`, `${modelType}_${projectId.slice(0, 8)}.pkl`),
 }

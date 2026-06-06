@@ -14,6 +14,7 @@ import ScalingPage from './pages/ScalingPage'
 import TrainingPage from './pages/TrainingPage'
 import EvaluationPage from './pages/EvaluationPage'
 import OptimizationPage from './pages/OptimizationPage'
+import ExportPage from './pages/ExportPage'
 import SettingsPage from './pages/SettingsPage'
 import DashboardPage from './pages/DashboardPage'
 import ProjectsPage from './pages/ProjectsPage'
@@ -33,6 +34,7 @@ const STEP_TITLES: Record<PipelineStep, string> = {
   training: 'Model Training',
   evaluation: 'Model Evaluation',
   optimization: 'Hyperparameter Optimization',
+  export: 'Export & Results',
 }
 
 const STEP_BADGES: Partial<Record<PipelineStep, string>> = {}
@@ -158,6 +160,7 @@ export default function App() {
       case 'training': return <TrainingPage projectId={projectId} onNext={handleNext} />
       case 'evaluation': return <EvaluationPage projectId={projectId} onNext={handleNext} />
       case 'optimization': return <OptimizationPage projectId={projectId} onNext={handleNext} />
+      case 'export': return <ExportPage projectId={projectId} onDashboard={() => handlePageChange('dashboard')} />
     }
   }
 

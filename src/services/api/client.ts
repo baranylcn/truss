@@ -30,3 +30,23 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   const json = await res.json().catch(() => null)
   return json as T
 }
+
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers: Record<string, string> = {
+    ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+  }
+  const res = await fetch(`${BASE}${path}`, { headers })
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${res.statusText || 'Export failed'}`)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
