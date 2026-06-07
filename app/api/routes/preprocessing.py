@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
-from app.core.redis import get_dataframe, set_dataframe, get_correlation_cache, set_correlation_cache
+from app.core.redis import (
+    get_dataframe, set_dataframe,
+    get_correlation_cache, set_correlation_cache,
+    get_column_tags, set_column_tags,
+)
 from app.services.db import get_db
 from app.services.models import User, Project, PipelineState
 from app.services.ml_pipeline import (
@@ -25,6 +29,7 @@ from app.schemas.preprocessing import (
     ScalingRequest,
     PreprocessingResponse,
     CorrelationResponse,
+    ColumnTagsResponse,
 )
 from app.utils.json_sanitize import sanitize_for_json
 
@@ -69,6 +74,98 @@ async def _save_pipeline_state(
     await db.commit()
 
 
+async def _update_column_tags(
+    project_id: str,
+    step_name: str,
+    config: dict,
+    df_before: pd.DataFrame,
+    df_after: pd.DataFrame,
+) -> None:
+    """Computes and persists per-column transformation tags after a preprocessing step."""
+    tags = await get_column_tags(project_id)
+
+    if step_name == "scaling":
+        method = config.get("method", "standard")
+        column_methods = config.get("column_methods") or {}
+        requested_cols = config.get("columns")
+        if requested_cols:
+            affected = [c for c in requested_cols if c in df_before.columns]
+        else:
+            affected = [c for c in df_before.columns if pd.api.types.is_numeric_dtype(df_before[c])]
+        for col in affected:
+            m = column_methods.get(col, method)
+            col_tags = [t for t in tags.get(col, []) if not t.startswith("scaled:")]
+            col_tags.append(f"scaled:{m}")
+            tags[col] = col_tags
+
+    elif step_name == "encoding":
+        method = config.get("method", "label")
+        column_methods = config.get("column_methods") or {}
+        requested_cols = config.get("columns")
+        if requested_cols:
+            original_cols = [c for c in requested_cols if c in df_before.columns and not pd.api.types.is_numeric_dtype(df_before[c])]
+        else:
+            original_cols = [c for c in df_before.columns if not pd.api.types.is_numeric_dtype(df_before[c])]
+        before_col_set = set(df_before.columns)
+        after_col_set = set(df_after.columns)
+        new_cols = after_col_set - before_col_set
+        for col in original_cols:
+            m = column_methods.get(col, method)
+            if m == "onehot":
+                tags.pop(col, None)
+                for new_col in new_cols:
+                    if new_col.startswith(col + "_"):
+                        tags[new_col] = [f"encoded:{m}"]
+            else:
+                col_tags = [t for t in tags.get(col, []) if not t.startswith("encoded:")]
+                col_tags.append(f"encoded:{m}")
+                tags[col] = col_tags
+
+    elif step_name == "outliers":
+        action = config.get("action", "clip")
+        if action != "none":
+            requested_cols = config.get("columns")
+            if requested_cols:
+                affected = [c for c in requested_cols if c in df_before.columns]
+            else:
+                affected = [
+                    c for c in df_before.columns
+                    if pd.api.types.is_numeric_dtype(df_before[c]) and not pd.api.types.is_bool_dtype(df_before[c])
+                ]
+            for col in affected:
+                col_tags = [t for t in tags.get(col, []) if not t.startswith("outliers:")]
+                col_tags.append(f"outliers:{action}")
+                tags[col] = col_tags
+
+    elif step_name == "missing_values":
+        numerical_method = config.get("numerical_method") or "mean"
+        categorical_method = config.get("categorical_method") or "mode"
+        column_methods = config.get("column_methods") or {}
+        requested_cols = config.get("columns")
+        if requested_cols:
+            affected = [c for c in requested_cols if c in df_before.columns]
+        else:
+            affected = [c for c in df_before.columns if df_before[c].isna().any()]
+        for col in affected:
+            default_m = numerical_method if pd.api.types.is_numeric_dtype(df_before[col]) else categorical_method
+            m = column_methods.get(col, default_m)
+            if m == "none":
+                continue
+            col_tags = [t for t in tags.get(col, []) if not t.startswith("missing:")]
+            col_tags.append(f"missing:{m}")
+            tags[col] = col_tags
+
+    elif step_name == "drop_columns":
+        for col in config.get("dropped_columns", []):
+            tags.pop(col, None)
+
+    # Remove stale entries for columns that no longer exist
+    current_cols = set(df_after.columns)
+    tags = {c: t for c, t in tags.items() if c in current_cols}
+
+    await set_column_tags(project_id, tags)
+
+
 @router.post("/missing-values/{project_id}", response_model=PreprocessingResponse)
 async def missing_values(
     project_id: str,
@@ -91,6 +188,7 @@ async def missing_values(
         raise HTTPException(status_code=400, detail=str(exc))
 
     await set_dataframe(project_id, df_new)
+    await _update_column_tags(project_id, "missing_values", body.model_dump(), df, df_new)
     await _save_pipeline_state(project_id, "missing_values", body.model_dump(), df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
@@ -164,6 +262,7 @@ async def outliers(
         raise HTTPException(status_code=400, detail=str(exc))
 
     await set_dataframe(project_id, df_new)
+    await _update_column_tags(project_id, "outliers", body.model_dump(), df, df_new)
     await _save_pipeline_state(project_id, "outliers", body.model_dump(), df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
@@ -187,6 +286,7 @@ async def encoding(
         raise HTTPException(status_code=400, detail=str(exc))
 
     await set_dataframe(project_id, df_new)
+    await _update_column_tags(project_id, "encoding", body.model_dump(), df, df_new)
     await _save_pipeline_state(project_id, "encoding", body.model_dump(), df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
@@ -210,6 +310,7 @@ async def scaling(
         raise HTTPException(status_code=400, detail=str(exc))
 
     await set_dataframe(project_id, df_new)
+    await _update_column_tags(project_id, "scaling", body.model_dump(), df, df_new)
     await _save_pipeline_state(project_id, "scaling", body.model_dump(), df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
@@ -234,6 +335,7 @@ async def drop_columns(
 
     df_new = df.drop(columns=columns)
     await set_dataframe(project_id, df_new)
+    await _update_column_tags(project_id, "drop_columns", {"dropped_columns": columns}, df, df_new)
     await _save_pipeline_state(project_id, "correlation", {"dropped_columns": columns}, df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
@@ -255,3 +357,23 @@ async def correlation(
     payload = {"correlation_matrix": matrix, "columns": cols}
     await set_correlation_cache(project_id, payload)
     return payload
+
+
+@router.get("/column-tags/{project_id}", response_model=ColumnTagsResponse)
+async def column_tags(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Returns the transformation tags applied to each column in the current pipeline state."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == uuid.UUID(project_id),
+            Project.user_id == current_user.id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    tags = await get_column_tags(project_id)
+    return {"tags": tags}

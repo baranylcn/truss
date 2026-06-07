@@ -36,3 +36,7 @@ class PreprocessingResponse(DatasetInfo):
 class CorrelationResponse(BaseModel):
     correlation_matrix: dict[str, dict[str, float]]
     columns: list[str]
+
+
+class ColumnTagsResponse(BaseModel):
+    tags: Dict[str, List[str]]

@@ -54,7 +54,7 @@ async def set_dataframe(project_id: str, df: pd.DataFrame, ttl: int = 86400) -> 
 async def delete_dataframe(project_id: str) -> None:
     """Removes the project DataFrame and all derived cache keys from Redis."""
     r = get_redis()
-    await r.delete(f"df:{project_id}", f"meta:{project_id}", f"analysis:{project_id}", f"correlation:{project_id}")
+    await r.delete(f"df:{project_id}", f"meta:{project_id}", f"analysis:{project_id}", f"correlation:{project_id}", f"tags:{project_id}")
 
 
 async def get_analysis_cache(project_id: str) -> list[Any] | None:
@@ -85,3 +85,18 @@ async def set_correlation_cache(project_id: str, payload: dict, ttl: int = 86400
     """Caches correlation matrix for the given project."""
     r = get_redis()
     await r.setex(f"correlation:{project_id}", ttl, json.dumps(payload))
+
+
+async def get_column_tags(project_id: str) -> dict[str, list[str]]:
+    """Returns the column transformation tags for the project, or {} if not set."""
+    r = get_redis()
+    data = await r.get(f"tags:{project_id}")
+    if data is None:
+        return {}
+    return json.loads(data)
+
+
+async def set_column_tags(project_id: str, tags: dict[str, list[str]], ttl: int = 86400) -> None:
+    """Persists column transformation tags to Redis."""
+    r = get_redis()
+    await r.setex(f"tags:{project_id}", ttl, json.dumps(tags))

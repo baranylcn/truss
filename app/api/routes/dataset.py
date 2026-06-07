@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
-from app.core.redis import get_dataframe, set_dataframe, get_analysis_cache, set_analysis_cache
+from app.core.redis import get_dataframe, set_dataframe, get_analysis_cache, set_analysis_cache, set_column_tags
 from app.services.db import get_db
 from app.services.models import User, Project
 from app.services.ml_pipeline import df_to_payload, analyze_dataframe
@@ -58,6 +58,7 @@ async def upload_dataset(
         raise HTTPException(status_code=404, detail="Project not found")
 
     await set_dataframe(project_id, df)
+    await set_column_tags(project_id, {})
 
     columns = list(df.columns)
     shape = [len(df), len(columns)]
