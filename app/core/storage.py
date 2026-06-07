@@ -13,7 +13,10 @@ _TIMEOUT = 30
 
 
 def _headers() -> dict:
-    return {"Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}"}
+    return {
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
+        "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+    }
 
 
 def _object_url(project_id: str) -> str:
