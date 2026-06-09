@@ -1,7 +1,5 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Activity, ArrowRight, X } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { useQuery } from '@tanstack/react-query'
+import { Activity, ArrowRight } from 'lucide-react'
 import { projectsApi } from '../services/api/projects'
 import type { AppPage, PipelineStep, Project } from '../types'
 
@@ -9,8 +7,7 @@ interface DashboardPageProps {
   onPageChange: (page: AppPage) => void
   onStepChange: (step: PipelineStep) => void
   onOpenProject: (id: string, step: PipelineStep) => void
-  showCreateModal?: boolean
-  onCloseCreateModal?: () => void
+  onNewProject: () => void
 }
 
 const STATUS_STYLES: Record<string, { dot: string; text: string; bg: string; label: string }> = {
@@ -28,36 +25,11 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(h / 24)}d ago`
 }
 
-export default function DashboardPage({ onOpenProject, showCreateModal, onCloseCreateModal }: DashboardPageProps) {
-  const qc = useQueryClient()
-  const [projectName, setProjectName] = useState('')
-
-  const showNewProject = showCreateModal ?? false
-  const setShowNewProject = (v: boolean) => { if (!v) onCloseCreateModal?.() }
-
+export default function DashboardPage({ onOpenProject, onNewProject }: DashboardPageProps) {
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
-
-  const createMutation = useMutation({
-    mutationFn: (name: string) => projectsApi.create({ name }),
-    onSuccess: (project) => {
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      setShowNewProject(false)
-      setProjectName('')
-      toast.success('Project created')
-      onOpenProject(project.id, 'upload')
-    },
-    onError: (err: Error) => {
-      toast.error(err.message)
-    },
-  })
-
-  const handleCreate = () => {
-    const name = projectName.trim() || `Project ${new Date().toLocaleDateString()}`
-    createMutation.mutate(name)
-  }
 
   const completedProjects = projects.filter((p) => p.status === 'completed')
   const avgAccuracy = '-'
@@ -74,44 +46,6 @@ export default function DashboardPage({ onOpenProject, showCreateModal, onCloseC
       <div className="mb-8">
         <p className="text-sm text-[#64748b]">Welcome back. Here's what's happening.</p>
       </div>
-
-      {/* New Project Modal */}
-      {showNewProject && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-[#111827] border border-[#1e2a3a] rounded-xl p-6 w-full max-w-sm mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-white">New Project</p>
-              <button onClick={() => setShowNewProject(false)} className="text-[#64748b] hover:text-white">
-                <X size={16} />
-              </button>
-            </div>
-            <input
-              autoFocus
-              type="text"
-              placeholder="Project name"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              className="w-full bg-[#0d1117] border border-[#1e2a3a] rounded-lg px-3 py-2 text-sm text-white placeholder-[#4a5568] outline-none focus:border-[#f97316] mb-4"
-            />
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowNewProject(false)}
-                className="px-3 py-1.5 text-xs text-[#64748b] hover:text-white"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreate}
-                disabled={createMutation.isPending}
-                className="px-4 py-1.5 bg-[#f97316] hover:bg-[#ea6a0a] disabled:opacity-50 text-white text-xs font-semibold rounded-lg"
-              >
-                {createMutation.isPending ? 'Creating…' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-8">
@@ -139,7 +73,7 @@ export default function DashboardPage({ onOpenProject, showCreateModal, onCloseC
           <div className="px-5 py-10 text-center">
             <p className="text-sm text-[#64748b]">No projects yet.</p>
             <button
-              onClick={() => setShowNewProject(true)}
+              onClick={onNewProject}
               className="mt-2 text-xs text-[#f97316] hover:underline"
             >
               Create your first project →

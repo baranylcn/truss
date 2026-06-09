@@ -2,7 +2,6 @@ import {
   LayoutDashboard,
   FolderOpen,
   Settings,
-  PlusCircle,
   Upload,
   BarChart2,
   AlertTriangle,
@@ -16,6 +15,7 @@ import {
   CheckCircle2,
   Circle,
   LogOut,
+  ChevronLeft,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import type { PipelineStep, AppPage, StepStatus } from '../types';
@@ -25,6 +25,7 @@ interface SidebarProps {
   currentStep: PipelineStep;
   onPageChange: (page: AppPage) => void;
   onStepChange: (step: PipelineStep) => void;
+  onBackToDashboard: () => void;
 }
 
 const PIPELINE_STEPS: { id: PipelineStep; label: string; icon: React.ReactNode }[] = [
@@ -61,9 +62,9 @@ function StepIcon({ status }: { status: StepStatus }) {
   return <Circle size={14} className="text-[#475569] flex-shrink-0" />;
 }
 
-export default function Sidebar({ currentPage, currentStep, onPageChange, onStepChange }: SidebarProps) {
+export default function Sidebar({ currentPage, currentStep, onPageChange, onStepChange, onBackToDashboard }: SidebarProps) {
   const { signOut } = useAuth();
-  const isPipeline = currentPage === 'pipeline';
+  const isInProject = currentPage === 'pipeline';
 
   const handleSignOut = async () => {
     try {
@@ -78,48 +79,51 @@ export default function Sidebar({ currentPage, currentStep, onPageChange, onStep
       {/* Logo */}
       <div className="px-4 py-4 border-b border-[#1e2a3a]">
         <button
-          onClick={() => onPageChange('dashboard')}
+          onClick={onBackToDashboard}
           className="flex items-center gap-2 group cursor-pointer"
         >
           <img src="/truss_logo.png" alt="Truss" className="h-12 w-auto object-contain" />
         </button>
       </div>
 
-      {/* Main Nav - no section label */}
-      <nav className="px-3 pt-4 pb-2 flex-shrink-0">
-        <NavItem
-          icon={<LayoutDashboard size={15} />}
-          label="Dashboard"
-          active={currentPage === 'dashboard'}
-          onClick={() => onPageChange('dashboard')}
-        />
-        <NavItem
-          icon={<PlusCircle size={15} />}
-          label="New Project"
-          active={isPipeline && currentStep === 'upload' && currentPage === 'pipeline'}
-          onClick={() => { onPageChange('pipeline'); onStepChange('upload'); }}
-        />
-        <NavItem
-          icon={<FolderOpen size={15} />}
-          label="Projects"
-          active={currentPage === 'projects'}
-          onClick={() => onPageChange('projects')}
-        />
-        <NavItem
-          icon={<Settings size={15} />}
-          label="Settings"
-          active={currentPage === 'settings'}
-          onClick={() => onPageChange('settings')}
-        />
-      </nav>
+      {/* App-level nav */}
+      {!isInProject && (
+        <nav className="px-3 pt-4 pb-2 flex-shrink-0">
+          <NavItem
+            icon={<LayoutDashboard size={15} />}
+            label="Dashboard"
+            active={currentPage === 'dashboard'}
+            onClick={() => onPageChange('dashboard')}
+          />
+          <NavItem
+            icon={<FolderOpen size={15} />}
+            label="Projects"
+            active={currentPage === 'projects'}
+            onClick={() => onPageChange('projects')}
+          />
+          <NavItem
+            icon={<Settings size={15} />}
+            label="Settings"
+            active={currentPage === 'settings'}
+            onClick={() => onPageChange('settings')}
+          />
+        </nav>
+      )}
 
-      {/* Spacer when not in pipeline mode */}
-      {!isPipeline && <div className="flex-1" />}
+      {/* Project-level nav */}
+      {isInProject && (
+        <nav className="px-3 pt-3 pb-2 flex-1 overflow-y-auto flex flex-col">
+          {/* Back link */}
+          <button
+            onClick={onBackToDashboard}
+            className="w-full flex items-center gap-2 py-1.5 pl-2 mb-3 text-xs text-[#64748b] hover:text-white transition-colors duration-150 cursor-pointer"
+          >
+            <ChevronLeft size={13} className="flex-shrink-0" />
+            Back to Dashboard
+          </button>
 
-      {/* Pipeline Steps */}
-      {isPipeline && (
-        <nav className="px-3 pt-3 pb-2 flex-1 overflow-y-auto">
           <p className="text-[10px] font-semibold text-[#4a5568] uppercase tracking-widest mb-2 px-1">Pipeline Steps</p>
+
           {PIPELINE_STEPS.map((step) => {
             const status = getStepStatus(step.id, currentStep);
             const isActive = currentStep === step.id;
@@ -150,6 +154,9 @@ export default function Sidebar({ currentPage, currentStep, onPageChange, onStep
           })}
         </nav>
       )}
+
+      {/* Spacer when in app context */}
+      {!isInProject && <div className="flex-1" />}
 
       {/* User */}
       <div className="flex-shrink-0 border-t border-[#1e2a3a] px-3 py-3">

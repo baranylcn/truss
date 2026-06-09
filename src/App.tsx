@@ -3,6 +3,7 @@ import { useAuth } from './contexts/AuthContext'
 import LandingPage from './pages/LandingPage'
 import Sidebar from './components/Sidebar'
 import TopBar from './components/TopBar'
+import CreateProjectModal from './components/CreateProjectModal'
 import Footer from './components/Footer'
 import UploadPage from './pages/UploadPage'
 import AnalyzePage from './pages/AnalyzePage'
@@ -137,8 +138,7 @@ export default function App() {
           onPageChange={handlePageChange}
           onStepChange={handleStepChange}
           onOpenProject={handleOpenProject}
-          showCreateModal={showCreateProject}
-          onCloseCreateModal={() => setShowCreateProject(false)}
+          onNewProject={() => setShowCreateProject(true)}
         />
       )
     }
@@ -171,18 +171,28 @@ export default function App() {
         currentStep={currentStep}
         onPageChange={handlePageChange}
         onStepChange={handleStepChange}
+        onBackToDashboard={() => handlePageChange('dashboard')}
       />
       <div className="flex flex-col" style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'hidden' }}>
         <TopBar
           title={getPageTitle()}
           badge={getPageBadge()}
-          onNewProject={() => { setCurrentPage('dashboard'); setShowCreateProject(true) }}
+          onNewProject={() => setShowCreateProject(true)}
         />
         <main style={{ flex: 1, height: '100%', overflowY: 'auto', minWidth: 0 }}>
           {renderContent()}
         </main>
         <Footer />
       </div>
+      {showCreateProject && (
+        <CreateProjectModal
+          onClose={() => setShowCreateProject(false)}
+          onCreated={(id) => {
+            setShowCreateProject(false)
+            handleOpenProject(id, 'upload')
+          }}
+        />
+      )}
     </div>
   )
 }
