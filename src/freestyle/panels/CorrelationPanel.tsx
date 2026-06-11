@@ -23,8 +23,7 @@ export default function CorrelationPanel({ projectId, onComputed }: Props) {
   const [threshold, setThreshold] = useState('')
 
   const computeMutation = useMutation({
-    // TODO: pass method as query param once backend supports it
-    mutationFn: () => preprocessingApi.correlation(projectId),
+    mutationFn: () => preprocessingApi.correlation(projectId, method),
     onSuccess: (res) => {
       onComputed(res.correlation_matrix, res.columns)
     },

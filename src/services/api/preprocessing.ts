@@ -40,6 +40,7 @@ interface DetectOutliersResponse {
 interface CorrelationResponse {
   correlation_matrix: Record<string, Record<string, number>>
   columns: string[]
+  method?: string
 }
 
 export const preprocessingApi = {
@@ -73,8 +74,8 @@ export const preprocessingApi = {
       body: JSON.stringify(config),
     }),
 
-  correlation: (projectId: string) =>
-    apiRequest<CorrelationResponse>(`/preprocessing/correlation/${projectId}`),
+  correlation: (projectId: string, method = 'pearson') =>
+    apiRequest<CorrelationResponse>(`/preprocessing/correlation/${projectId}?method=${method}`),
 
   dropColumns: (projectId: string, columns: string[]) =>
     apiRequest<DatasetInfo>(`/preprocessing/drop-columns/${projectId}`, {

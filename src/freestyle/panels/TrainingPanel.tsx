@@ -37,6 +37,12 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
   const shape = data?.dataset_info.shape
 
   useEffect(() => {
+    if (target && columns.length > 0 && !columns.includes(target)) {
+      setTarget('')
+    }
+  }, [columns, target])
+
+  useEffect(() => {
     if (!colOpen) return
     const handler = (e: MouseEvent) => {
       if (!dropdownRef.current?.contains(e.target as Node)) setColOpen(false)
@@ -175,6 +181,8 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
         pending={trainMutation.isPending}
         disabled={!target}
         disabledHint={!target ? 'Select a target column to train.' : undefined}
+        applyLabel="Start Training"
+        pendingLabel="Training… this may take a moment"
       />
     </div>
   )

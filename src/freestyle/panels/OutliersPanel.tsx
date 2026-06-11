@@ -171,6 +171,15 @@ export default function OutliersPanel({ projectId, onApplied, onDetected }: Prop
           <p className="text-xs text-[#22c55e] text-center py-2">No outliers detected.</p>
         )}
 
+        {detected && detected.length > 0 && (
+          <div className="flex items-start gap-2 px-3 py-2 bg-[#111827] border border-[#f97316]/30 rounded-lg">
+            <span className="text-[#f97316] text-sm flex-shrink-0">↓</span>
+            <p className="text-[11px] text-[#94a3b8] leading-relaxed">
+              Choose an action below, then click <span className="text-white font-semibold">Apply</span> to update the dataset.
+            </p>
+          </div>
+        )}
+
         <Section label="Action">
           {ACTIONS.map(o => (
             <OptionCard key={o.value} selected={action === o.value} label={o.label} desc={o.desc} onClick={() => setAction(o.value)} />

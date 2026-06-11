@@ -240,9 +240,14 @@ export function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 export function PanelFooter({
-  onApply, pending, disabled, disabledHint,
+  onApply, pending, disabled, disabledHint, applyLabel, pendingLabel,
 }: {
-  onApply: () => void; pending: boolean; disabled?: boolean; disabledHint?: string
+  onApply: () => void
+  pending: boolean
+  disabled?: boolean
+  disabledHint?: string
+  applyLabel?: string
+  pendingLabel?: string
 }) {
   return (
     <div className="p-4 border-t border-[#1e2a3a] flex flex-col gap-2 flex-shrink-0">
@@ -250,9 +255,12 @@ export function PanelFooter({
       <button
         onClick={onApply}
         disabled={pending || disabled}
-        className="w-full py-2.5 bg-[#f97316] hover:bg-[#ea6c0a] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors"
+        className="w-full py-2.5 bg-[#f97316] hover:bg-[#ea6c0a] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
       >
-        {pending ? 'Applying…' : 'Apply & Update Preview'}
+        {pending
+          ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />{pendingLabel ?? 'Applying…'}</>
+          : (applyLabel ?? 'Apply & Update Preview')
+        }
       </button>
     </div>
   )
