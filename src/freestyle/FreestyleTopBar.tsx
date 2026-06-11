@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Menu, ChevronDown, Download, Settings, CheckCircle2, Circle, BarChart2 } from 'lucide-react'
+import { Menu, ChevronDown, Download, Settings, CheckCircle2, Circle, BarChart2, Clock } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
 import { datasetApi } from '../services/api/dataset'
@@ -22,6 +22,7 @@ const PIPELINE_DROPDOWN_STEPS: { id: PipelineStep; label: string }[] = [
   { id: 'feature-engineering', label: 'Feature Engineering' },
   { id: 'feature-selection',   label: 'Feature Selection' },
   { id: 'encoding',            label: 'Encoding' },
+  { id: 'cross-validate',      label: 'Cross Validation' },
   { id: 'correlation',    label: 'Correlation' },
   { id: 'scaling',        label: 'Scaling' },
   { id: 'training',       label: 'Training' },
@@ -44,6 +45,8 @@ const STEP_LABELS: Partial<Record<PipelineStep, string>> = {
   'filter-rows':         'Filter Rows',
   'feature-engineering': 'Feature Engineering',
   'feature-selection':   'Feature Selection',
+  'cross-validate':      'Cross Validation',
+  'pipeline-history':    'Pipeline History',
 }
 
 type OpenMenu = 'hamburger' | 'steps' | null
@@ -200,6 +203,14 @@ export default function FreestyleTopBar({
         >
           <BarChart2 size={12} />
           Analyze
+        </button>
+
+        <button
+          onClick={() => onStepSelect('pipeline-history')}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#111827] border border-[#1e2a3a] hover:border-[#2d3748] text-xs text-[#94a3b8] hover:text-white rounded-lg transition-all"
+        >
+          <Clock size={12} />
+          History
         </button>
 
         <button

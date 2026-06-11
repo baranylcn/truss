@@ -60,7 +60,9 @@ export type PipelineStep =
   | 'export'
   | 'filter-rows'
   | 'feature-engineering'
-  | 'feature-selection';
+  | 'feature-selection'
+  | 'cross-validate'
+  | 'pipeline-history';
 
 export type AppPage = 'dashboard' | 'pipeline' | 'projects' | 'settings';
 

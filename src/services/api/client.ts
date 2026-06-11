@@ -52,6 +52,32 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   return json as T
 }
 
+export async function apiFormDownload(path: string, body: FormData, filename: string): Promise<void> {
+  let token = await getToken()
+  let res = await fetch(`${BASE}${path}`, { method: 'POST', headers: buildHeaders(token, true), body })
+
+  if (res.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error || !data.session) {
+      await supabase.auth.signOut()
+      throw new Error('Session expired. Please sign in again.')
+    }
+    token = data.session.access_token
+    res = await fetch(`${BASE}${path}`, { method: 'POST', headers: buildHeaders(token, true), body })
+  }
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText || 'Upload failed'}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export async function apiDownload(path: string, filename: string): Promise<void> {
   let token = await getToken()
   let res = await fetch(`${BASE}${path}`, { headers: buildHeaders(token, false) })

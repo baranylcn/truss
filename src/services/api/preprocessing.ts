@@ -115,4 +115,27 @@ export const preprocessingApi = {
       variance_threshold: number
       correlation_threshold: number
     }>(`/preprocessing/feature-selection/${projectId}?variance_threshold=${varianceThreshold}&correlation_threshold=${correlationThreshold}`),
+
+  castColumn: (projectId: string, column: string, dtype: string) =>
+    apiRequest<import('../../types').DatasetInfo>(`/preprocessing/cast-column/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ column, dtype }),
+    }),
+
+  replaceValues: (projectId: string, column: string, oldValue: unknown, newValue: unknown) =>
+    apiRequest<import('../../types').DatasetInfo>(`/preprocessing/replace-values/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ column, old_value: oldValue, new_value: newValue }),
+    }),
+
+  pipelineHistory: (projectId: string) =>
+    apiRequest<{
+      history: { id: string; step_name: string; config: Record<string, unknown> | null; created_at: string }[]
+    }>(`/preprocessing/pipeline-history/${projectId}`),
+
+  restoreSnapshot: (projectId: string, stateId: string) =>
+    apiRequest<import('../../types').DatasetInfo>(`/preprocessing/restore/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ state_id: stateId }),
+    }),
 }

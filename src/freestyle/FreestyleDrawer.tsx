@@ -1,4 +1,4 @@
-import { X, AlertTriangle, Maximize2, Code2, Cpu, GitMerge, BarChart2, TrendingUp, Download, Filter, Wand2, Layers } from 'lucide-react'
+import { X, AlertTriangle, Maximize2, Code2, Cpu, GitMerge, BarChart2, TrendingUp, Download, Filter, Wand2, Layers, ShieldCheck, Clock } from 'lucide-react'
 import MissingValuesPanel       from './panels/MissingValuesPanel'
 import OutliersPanel            from './panels/OutliersPanel'
 import EncodingPanel            from './panels/EncodingPanel'
@@ -11,6 +11,8 @@ import ExportPanel              from './panels/ExportPanel'
 import FilterRowsPanel          from './panels/FilterRowsPanel'
 import FeatureEngineeringPanel  from './panels/FeatureEngineeringPanel'
 import FeatureSelectionPanel    from './panels/FeatureSelectionPanel'
+import CrossValidationPanel     from './panels/CrossValidationPanel'
+import PipelineHistoryPanel     from './panels/PipelineHistoryPanel'
 import type { PipelineStep } from '../types'
 
 interface FreestyleDrawerProps {
@@ -34,6 +36,8 @@ const STEP_META: Partial<Record<PipelineStep, { label: string; icon: React.React
   'filter-rows':         { label: 'FILTER ROWS',         icon: <Filter size={13} /> },
   'feature-engineering': { label: 'FEATURE ENGINEERING', icon: <Wand2 size={13} /> },
   'feature-selection':   { label: 'FEATURE SELECTION',   icon: <Layers size={13} /> },
+  'cross-validate':      { label: 'CROSS VALIDATION',    icon: <ShieldCheck size={13} /> },
+  'pipeline-history':    { label: 'PIPELINE HISTORY',    icon: <Clock size={13} /> },
 }
 
 export default function FreestyleDrawer({ projectId, step, onClose, onApplied, onOpenOverlay }: FreestyleDrawerProps) {
@@ -79,6 +83,8 @@ export default function FreestyleDrawer({ projectId, step, onClose, onApplied, o
       {step === 'filter-rows'        && <FilterRowsPanel         projectId={projectId} onApplied={onApplied} />}
       {step === 'feature-engineering' && <FeatureEngineeringPanel projectId={projectId} onApplied={onApplied} />}
       {step === 'feature-selection'   && <FeatureSelectionPanel   projectId={projectId} onApplied={onApplied} />}
+      {step === 'cross-validate'      && <CrossValidationPanel    projectId={projectId} onApplied={onApplied} />}
+      {step === 'pipeline-history'    && <PipelineHistoryPanel    projectId={projectId} onApplied={onApplied} />}
     </div>
   )
 }

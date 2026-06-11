@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { datasetApi } from '../../services/api/dataset'
 import { modelApi } from '../../services/api/model'
@@ -25,6 +25,7 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
   const [taskType, setTaskType] = useState<TaskType>('classification')
   const [testSize, setTestSize] = useState(20)
   const [colOpen, setColOpen]   = useState(false)
+  const [useClassWeight, setUseClassWeight] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   const { data } = useQuery({
@@ -35,6 +36,12 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
 
   const columns = data?.dataset_info.columns ?? []
   const shape = data?.dataset_info.shape
+
+  const { data: balanceData } = useQuery({
+    queryKey: ['class-balance', projectId, target],
+    queryFn: () => modelApi.classBalance(projectId, target),
+    enabled: !!target && model !== 'linear_regression',
+  })
 
   useEffect(() => {
     if (target && columns.length > 0 && !columns.includes(target)) {
@@ -61,6 +68,7 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
       target_column: target,
       test_size: testSize / 100,
       task_type: effectiveTaskType,
+      hyperparameters: useClassWeight && effectiveTaskType === 'classification' ? { class_weight: 'balanced' } : {},
     }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
@@ -154,6 +162,41 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
             <p className="text-[10px] text-[#4a5568] mt-1">Linear Regression is regression-only.</p>
           )}
         </div>
+
+        {/* Class imbalance warning */}
+        {balanceData && balanceData.is_imbalanced && effectiveTaskType === 'classification' && (
+          <div className="flex flex-col gap-2 px-3 py-2 bg-[#f9731610] border border-[#f9731640] rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={13} className="text-[#f97316] flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-[11px] font-semibold text-[#f97316]">Class Imbalance Detected</p>
+                <p className="text-[10px] text-[#4a5568] mt-0.5">
+                  Ratio {balanceData.imbalance_ratio}:1 across {balanceData.n_classes} classes.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {balanceData.classes.slice(0, 5).map(c => (
+                <span key={c.label} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#111827] text-[#94a3b8] border border-[#1e2a3a]">
+                  {String(c.label)}: {c.pct}%
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Class weight */}
+        {effectiveTaskType === 'classification' && target && (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useClassWeight}
+              onChange={e => setUseClassWeight(e.target.checked)}
+              className="accent-[#f97316] w-3.5 h-3.5"
+            />
+            <span className="text-[11px] text-[#94a3b8]">Use balanced class weights</span>
+          </label>
+        )}
 
         {/* Train/Test split */}
         <div>

@@ -1,4 +1,4 @@
-import { apiRequest, apiDownload } from './client'
+import { apiRequest, apiDownload, apiFormDownload } from './client'
 import type { TrainMetrics } from '../../types'
 
 interface TrainConfig {
@@ -76,4 +76,42 @@ export const modelApi = {
 
   exportModel: (projectId: string, modelType: string) =>
     apiDownload(`/model/export/model/${projectId}`, `${modelType}_${projectId.slice(0, 8)}.pkl`),
+
+  classBalance: (projectId: string, targetColumn: string) =>
+    apiRequest<{
+      classes: { label: string; count: number; pct: number }[]
+      imbalance_ratio: number
+      is_imbalanced: boolean
+      n_classes: number
+    }>(`/model/class-balance/${projectId}?target_column=${encodeURIComponent(targetColumn)}`),
+
+  crossValidate: (projectId: string, body: {
+    model_type: string
+    target_column: string
+    n_splits?: number
+    task_type?: string | null
+    hyperparameters?: Record<string, unknown>
+  }) =>
+    apiRequest<{
+      fold_scores: number[]
+      mean_score: number
+      std_score: number
+      n_splits: number
+      task_type: string
+      scoring: string
+      model_type: string
+    }>(`/model/cross-validate/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  batchPredict: (projectId: string, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiFormDownload(
+      `/model/batch-predict/${projectId}`,
+      formData,
+      `batch_predictions_${projectId.slice(0, 8)}.csv`,
+    )
+  },
 }
