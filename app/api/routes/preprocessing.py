@@ -2,6 +2,7 @@ import asyncio
 import logging
 from functools import partial
 
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -377,6 +378,90 @@ async def drop_columns(
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
+@router.post("/feature-engineering/{project_id}", response_model=PreprocessingResponse)
+async def feature_engineering(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Creates a new column via arithmetic, mathematical transform, or binning."""
+    operation: str = body.get("operation", "")
+    new_col: str = (body.get("new_col") or "").strip()
+
+    if not new_col:
+        raise HTTPException(status_code=400, detail="new_col name is required")
+
+    df = await _load_df_or_404(project_id, current_user, db)
+
+    if new_col in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{new_col}' already exists")
+
+    try:
+        if operation == "arithmetic":
+            col_a: str = body.get("col_a", "")
+            col_b: str = body.get("col_b", "")
+            operator: str = body.get("operator", "+")
+            if col_a not in df.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col_a}' not found")
+            if col_b not in df.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col_b}' not found")
+            a, b = df[col_a], df[col_b]
+            if operator == "+":
+                df[new_col] = a + b
+            elif operator == "-":
+                df[new_col] = a - b
+            elif operator == "*":
+                df[new_col] = a * b
+            elif operator == "/":
+                df[new_col] = a / b.replace(0, np.nan)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown operator '{operator}'")
+
+        elif operation == "transform":
+            col: str = body.get("col", "")
+            func: str = body.get("func", "")
+            if col not in df.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col}' not found")
+            s = df[col]
+            if func == "log":
+                df[new_col] = np.log1p(s.clip(lower=0))
+            elif func == "sqrt":
+                df[new_col] = np.sqrt(s.clip(lower=0))
+            elif func == "square":
+                df[new_col] = s ** 2
+            elif func == "abs":
+                df[new_col] = s.abs()
+            elif func == "normalize":
+                mn, mx = s.min(), s.max()
+                df[new_col] = (s - mn) / (mx - mn) if mx != mn else s * 0
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown function '{func}'")
+
+        elif operation == "binning":
+            col = body.get("col", "")
+            n_bins: int = int(body.get("n_bins", 5))
+            labels_flag: bool = bool(body.get("labels", True))
+            if col not in df.columns:
+                raise HTTPException(status_code=400, detail=f"Column '{col}' not found")
+            if n_bins < 2 or n_bins > 50:
+                raise HTTPException(status_code=400, detail="n_bins must be between 2 and 50")
+            bin_labels = [f"bin_{i+1}" for i in range(n_bins)] if labels_flag else None
+            df[new_col] = pd.cut(df[col], bins=n_bins, labels=bin_labels).astype(str)
+
+        else:
+            raise HTTPException(status_code=400, detail="operation must be 'arithmetic', 'transform', or 'binning'")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Feature engineering failed: {exc}")
+
+    await set_dataframe(project_id, df)
+    await _save_pipeline_state(project_id, "feature_engineering", body, df, db)
+    return sanitize_for_json(df_to_payload(df, project_id))
+
+
 @router.post("/filter-rows/{project_id}", response_model=PreprocessingResponse)
 async def filter_rows(
     project_id: str,
@@ -399,7 +484,6 @@ async def filter_rows(
         if column not in df.columns:
             raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
         try:
-            import numpy as np  # noqa: F401
             col_series = df[column]
             is_numeric = pd.api.types.is_numeric_dtype(col_series)
             parsed_val: float | str = float(value) if is_numeric else value
@@ -430,6 +514,45 @@ async def filter_rows(
     await set_dataframe(project_id, df_new)
     await _save_pipeline_state(project_id, "filter_rows", {**body, "rows_removed": rows_removed}, df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
+
+
+@router.get("/feature-selection/{project_id}")
+async def feature_selection(
+    project_id: str,
+    variance_threshold: float = 0.0,
+    correlation_threshold: float = 0.95,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Suggests columns to drop based on variance threshold and pairwise correlation."""
+    df = await _load_df_or_404(project_id, current_user, db)
+    numeric_df = df.select_dtypes(include=[np.number])
+
+    low_variance: list[str] = []
+    if variance_threshold > 0 and not numeric_df.empty:
+        variances = numeric_df.var()
+        low_variance = list(variances[variances <= variance_threshold].index)
+
+    high_corr_pairs: list[dict] = []
+    drop_corr: list[str] = []
+    if not numeric_df.empty and len(numeric_df.columns) > 1:
+        corr_matrix = numeric_df.corr().abs()
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+        for col in upper.columns:
+            for idx in upper.index:
+                val = upper.loc[idx, col]
+                if pd.notna(val) and val >= correlation_threshold:
+                    high_corr_pairs.append({"col_a": idx, "col_b": col, "correlation": round(float(val), 4)})
+                    if col not in drop_corr:
+                        drop_corr.append(col)
+
+    return {
+        "low_variance_cols": low_variance,
+        "high_correlation_pairs": high_corr_pairs,
+        "suggested_drop": list(set(low_variance) | set(drop_corr)),
+        "variance_threshold": variance_threshold,
+        "correlation_threshold": correlation_threshold,
+    }
 
 
 @router.get("/correlation/{project_id}", response_model=CorrelationResponse)

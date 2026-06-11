@@ -137,6 +137,19 @@ def handle_missing_values(
       mode_series = df_new[col].mode()
       if not mode_series.empty:
         df_new[col] = df_new[col].fillna(mode_series.iloc[0])
+    elif method == "ffill":
+      df_new[col] = df_new[col].ffill()
+    elif method == "bfill":
+      df_new[col] = df_new[col].bfill()
+    elif method.startswith("constant:"):
+      constant_val = method.split(":", 1)[1]
+      if pd.api.types.is_numeric_dtype(df_new[col]):
+        try:
+          df_new[col] = df_new[col].fillna(float(constant_val))
+        except ValueError:
+          df_new[col] = df_new[col].fillna(constant_val)
+      else:
+        df_new[col] = df_new[col].fillna(constant_val)
 
   if drop_subset:
     df_new = df_new.dropna(subset=drop_subset)
