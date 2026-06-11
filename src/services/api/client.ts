@@ -2,29 +2,50 @@ import { supabase } from '../../lib/supabase'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api'
 
-export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function getToken(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ?? null
+}
 
-  const isFormData = options.body instanceof FormData
-  const headers: Record<string, string> = {
+function buildHeaders(token: string | null, isFormData: boolean, extra: Record<string, string> = {}): Record<string, string> {
+  return {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-    ...(options.headers as Record<string, string> ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extra,
   }
+}
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers })
+function parseError(res: Response, json: { error?: string; detail?: unknown } | null): Error {
+  if (json) {
+    const detail = Array.isArray(json.detail)
+      ? (json.detail as { msg?: string }[]).map(d => d.msg ?? JSON.stringify(d)).join(', ')
+      : json.detail
+    return new Error(json.error ?? (detail as string) ?? `HTTP ${res.status}`)
+  }
+  return new Error(`HTTP ${res.status}: ${res.statusText || 'Server error'}`)
+}
+
+export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const isFormData = options.body instanceof FormData
+  const extra = options.headers as Record<string, string> ?? {}
+
+  let token = await getToken()
+  let res = await fetch(`${BASE}${path}`, { ...options, headers: buildHeaders(token, isFormData, extra) })
+
+  if (res.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error || !data.session) {
+      await supabase.auth.signOut()
+      throw new Error('Session expired. Please sign in again.')
+    }
+    token = data.session.access_token
+    res = await fetch(`${BASE}${path}`, { ...options, headers: buildHeaders(token, isFormData, extra) })
+  }
 
   if (!res.ok) {
     const contentType = res.headers.get('content-type') ?? ''
-    if (contentType.includes('application/json')) {
-      const json = await res.json().catch(() => null)
-      const detail = Array.isArray(json?.detail)
-        ? json.detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join(', ')
-        : json?.detail
-      throw new Error(json?.error ?? detail ?? `HTTP ${res.status}`)
-    }
-    // Non-JSON response (HTML gateway errors, etc.)
-    throw new Error(`HTTP ${res.status}: ${res.statusText || 'Server error'}`)
+    const json = contentType.includes('application/json') ? await res.json().catch(() => null) : null
+    throw parseError(res, json)
   }
 
   const json = await res.json().catch(() => null)
@@ -32,11 +53,19 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
 }
 
 export async function apiDownload(path: string, filename: string): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession()
-  const headers: Record<string, string> = {
-    ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+  let token = await getToken()
+  let res = await fetch(`${BASE}${path}`, { headers: buildHeaders(token, false) })
+
+  if (res.status === 401) {
+    const { data, error } = await supabase.auth.refreshSession()
+    if (error || !data.session) {
+      await supabase.auth.signOut()
+      throw new Error('Session expired. Please sign in again.')
+    }
+    token = data.session.access_token
+    res = await fetch(`${BASE}${path}`, { headers: buildHeaders(token, false) })
   }
-  const res = await fetch(`${BASE}${path}`, { headers })
+
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${res.statusText || 'Export failed'}`)
   }
