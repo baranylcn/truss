@@ -6,7 +6,7 @@ import { datasetApi } from '../../services/api/dataset'
 import { preprocessingApi } from '../../services/api/preprocessing'
 import { Section, OptionCard, StatCard, PanelFooter, ModeToggle, ColMethodRow } from './MissingValuesPanel'
 
-interface Props { projectId: string; onApplied: () => void; onClose: () => void }
+interface Props { projectId: string; onApplied: () => void }
 
 type Method = 'label' | 'onehot' | 'ordinal'
 type PanelMode = 'global' | 'per_column'
@@ -18,7 +18,7 @@ const METHODS: { value: Method; label: string; desc: string }[] = [
 ]
 const METHOD_OPTS = METHODS.map(m => ({ value: m.value, label: m.label }))
 
-export default function EncodingPanel({ projectId, onApplied, onClose }: Props) {
+export default function EncodingPanel({ projectId, onApplied }: Props) {
   const qc = useQueryClient()
   const [panelMode, setPanelMode] = useState<PanelMode>('global')
   const [method, setMethod] = useState<Method | null>(null)
@@ -120,7 +120,6 @@ export default function EncodingPanel({ projectId, onApplied, onClose }: Props) 
 
       <PanelFooter
         onApply={() => applyMutation.mutate()}
-        onSkip={onClose}
         pending={applyMutation.isPending}
         disabled={!canApply}
         disabledHint={catCols.length === 0 ? 'No categorical columns found.' : method === null ? 'Select an encoding method above.' : undefined}

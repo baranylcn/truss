@@ -5,7 +5,7 @@ import { datasetApi } from '../../services/api/dataset'
 import { preprocessingApi } from '../../services/api/preprocessing'
 import { Section, OptionCard, StatCard, PanelFooter, ModeToggle, ColMethodRow } from './MissingValuesPanel'
 
-interface Props { projectId: string; onApplied: () => void; onClose: () => void }
+interface Props { projectId: string; onApplied: () => void }
 
 type Scaler = 'standard' | 'minmax' | 'robust'
 type PanelMode = 'global' | 'per_column'
@@ -17,7 +17,7 @@ const SCALERS: { value: Scaler; label: string; desc: string }[] = [
 ]
 const SCALER_OPTS = SCALERS.map(s => ({ value: s.value, label: s.label }))
 
-export default function ScalingPanel({ projectId, onApplied, onClose }: Props) {
+export default function ScalingPanel({ projectId, onApplied }: Props) {
   const qc = useQueryClient()
   const [panelMode, setPanelMode] = useState<PanelMode>('global')
   const [scaler, setScaler] = useState<Scaler | null>(null)
@@ -164,7 +164,6 @@ export default function ScalingPanel({ projectId, onApplied, onClose }: Props) {
 
       <PanelFooter
         onApply={() => applyMutation.mutate()}
-        onSkip={onClose}
         pending={applyMutation.isPending}
         disabled={!canApply}
         disabledHint={

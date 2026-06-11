@@ -6,7 +6,7 @@ import { datasetApi } from '../../services/api/dataset'
 import { preprocessingApi } from '../../services/api/preprocessing'
 import { Section, OptionCard, StatCard, PanelFooter } from './MissingValuesPanel'
 
-interface Props { projectId: string; onApplied: () => void; onClose: () => void }
+interface Props { projectId: string; onApplied: () => void }
 
 type DetMethod = 'iqr' | 'zscore'
 type Action = 'clip' | 'drop' | 'none'
@@ -19,7 +19,7 @@ const ACTIONS: { value: Action; label: string; desc: string }[] = [
 
 interface DetectedRow { col: string; count: number; pct: string }
 
-export default function OutliersPanel({ projectId, onApplied, onClose }: Props) {
+export default function OutliersPanel({ projectId, onApplied }: Props) {
   const qc = useQueryClient()
   const [method, setMethod]   = useState<DetMethod>('iqr')
   const [action, setAction]   = useState<Action>('none')
@@ -174,7 +174,6 @@ export default function OutliersPanel({ projectId, onApplied, onClose }: Props) 
 
       <PanelFooter
         onApply={() => applyMutation.mutate()}
-        onSkip={onClose}
         pending={applyMutation.isPending}
         disabled={activeCols.size === 0}
         disabledHint={activeCols.size === 0 ? 'Select at least one column.' : undefined}

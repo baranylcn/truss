@@ -41,11 +41,11 @@ export default function FreestyleDrawer({ projectId, step, onClose, onApplied }:
       </div>
 
       {/* Panel */}
-      {step === 'missing-values' && <MissingValuesPanel projectId={projectId} onApplied={onApplied} onClose={onClose} />}
-      {step === 'outliers'       && <OutliersPanel      projectId={projectId} onApplied={onApplied} onClose={onClose} />}
-      {step === 'encoding'       && <EncodingPanel      projectId={projectId} onApplied={onApplied} onClose={onClose} />}
-      {step === 'scaling'        && <ScalingPanel       projectId={projectId} onApplied={onApplied} onClose={onClose} />}
-      {step === 'training'       && <TrainingPanel      projectId={projectId} onApplied={onApplied} onClose={onClose} />}
+      {step === 'missing-values' && <MissingValuesPanel projectId={projectId} onApplied={onApplied} />}
+      {step === 'outliers'       && <OutliersPanel      projectId={projectId} onApplied={onApplied} />}
+      {step === 'encoding'       && <EncodingPanel      projectId={projectId} onApplied={onApplied} />}
+      {step === 'scaling'        && <ScalingPanel       projectId={projectId} onApplied={onApplied} />}
+      {step === 'training'       && <TrainingPanel      projectId={projectId} onApplied={onApplied} />}
     </div>
   )
 }

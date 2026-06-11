@@ -6,7 +6,7 @@ import { datasetApi } from '../../services/api/dataset'
 import { modelApi } from '../../services/api/model'
 import { StatCard, PanelFooter } from './MissingValuesPanel'
 
-interface Props { projectId: string; onApplied: () => void; onClose: () => void }
+interface Props { projectId: string; onApplied: () => void }
 
 type ModelType = 'xgboost' | 'random_forest' | 'logistic_regression'
 type TaskType  = 'classification' | 'regression'
@@ -17,7 +17,7 @@ const MODELS: { value: ModelType; label: string; desc: string }[] = [
   { value: 'logistic_regression', label: 'Logistic Regression',  desc: 'Linear model. Classification only.' },
 ]
 
-export default function TrainingPanel({ projectId, onApplied, onClose }: Props) {
+export default function TrainingPanel({ projectId, onApplied }: Props) {
   const qc = useQueryClient()
   const [model, setModel]       = useState<ModelType>('xgboost')
   const [target, setTarget]     = useState('')
@@ -160,7 +160,6 @@ export default function TrainingPanel({ projectId, onApplied, onClose }: Props) 
 
       <PanelFooter
         onApply={() => trainMutation.mutate()}
-        onSkip={onClose}
         pending={trainMutation.isPending}
         disabled={!canTrain}
         disabledHint={!canTrain ? 'Select a target column to train.' : undefined}

@@ -4,7 +4,7 @@ import toast from 'react-hot-toast'
 import { datasetApi } from '../../services/api/dataset'
 import { preprocessingApi } from '../../services/api/preprocessing'
 
-interface Props { projectId: string; onApplied: () => void; onClose: () => void }
+interface Props { projectId: string; onApplied: () => void }
 
 type NumMethod = 'mean' | 'median' | 'mode' | 'drop' | 'none'
 type CatMethod = 'mode' | 'drop' | 'none'
@@ -31,7 +31,7 @@ const COL_METHOD_OPTS: { value: ColMethod; label: string }[] = [
   { value: 'none',   label: 'Skip' },
 ]
 
-export default function MissingValuesPanel({ projectId, onApplied, onClose }: Props) {
+export default function MissingValuesPanel({ projectId, onApplied }: Props) {
   const qc = useQueryClient()
   const [panelMode, setPanelMode] = useState<PanelMode>('global')
   const [numMethod, setNumMethod] = useState<NumMethod>('none')
@@ -135,7 +135,6 @@ export default function MissingValuesPanel({ projectId, onApplied, onClose }: Pr
 
       <PanelFooter
         onApply={() => applyMutation.mutate()}
-        onSkip={onClose}
         pending={applyMutation.isPending}
         disabled={totalMissing === 0}
         disabledHint={totalMissing === 0 ? 'No missing values found.' : (numMethod === 'none' && catMethod === 'none' && panelMode === 'global') ? 'Both methods set to Skip — no changes will be made.' : undefined}
@@ -222,9 +221,9 @@ export function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 export function PanelFooter({
-  onApply, onSkip, pending, disabled, disabledHint,
+  onApply, pending, disabled, disabledHint,
 }: {
-  onApply: () => void; onSkip: () => void; pending: boolean; disabled?: boolean; disabledHint?: string
+  onApply: () => void; pending: boolean; disabled?: boolean; disabledHint?: string
 }) {
   return (
     <div className="p-4 border-t border-[#1e2a3a] flex flex-col gap-2 flex-shrink-0">
@@ -235,9 +234,6 @@ export function PanelFooter({
         className="w-full py-2.5 bg-[#f97316] hover:bg-[#ea6c0a] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors"
       >
         {pending ? 'Applying…' : 'Apply & Update Preview'}
-      </button>
-      <button onClick={onSkip} className="w-full py-1.5 text-xs text-[#4a5568] hover:text-[#94a3b8] transition-colors">
-        Skip Step
       </button>
     </div>
   )
