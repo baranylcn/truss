@@ -1,4 +1,4 @@
-import { X, AlertTriangle, Maximize2, Code2, Cpu, GitMerge, BarChart2, TrendingUp } from 'lucide-react'
+import { X, AlertTriangle, Maximize2, Code2, Cpu, GitMerge, BarChart2, TrendingUp, Download } from 'lucide-react'
 import MissingValuesPanel  from './panels/MissingValuesPanel'
 import OutliersPanel       from './panels/OutliersPanel'
 import EncodingPanel       from './panels/EncodingPanel'
@@ -7,6 +7,7 @@ import TrainingPanel       from './panels/TrainingPanel'
 import CorrelationPanel    from './panels/CorrelationPanel'
 import EvaluationPanel     from './panels/EvaluationPanel'
 import OptimizationPanel   from './panels/OptimizationPanel'
+import ExportPanel         from './panels/ExportPanel'
 import type { PipelineStep } from '../types'
 
 interface FreestyleDrawerProps {
@@ -26,6 +27,7 @@ const STEP_META: Partial<Record<PipelineStep, { label: string; icon: React.React
   'correlation':    { label: 'CORRELATION',     icon: <GitMerge size={13} /> },
   'evaluation':     { label: 'EVALUATION',      icon: <BarChart2 size={13} /> },
   'optimization':   { label: 'OPTIMIZATION',    icon: <TrendingUp size={13} /> },
+  'export':         { label: 'EXPORT',           icon: <Download size={13} /> },
 }
 
 export default function FreestyleDrawer({ projectId, step, onClose, onApplied, onOpenOverlay }: FreestyleDrawerProps) {
@@ -67,6 +69,7 @@ export default function FreestyleDrawer({ projectId, step, onClose, onApplied, o
       )}
       {step === 'evaluation'   && <EvaluationPanel   projectId={projectId} onApplied={onApplied} />}
       {step === 'optimization' && <OptimizationPanel projectId={projectId} onApplied={onApplied} />}
+      {step === 'export'       && <ExportPanel       projectId={projectId} onApplied={onApplied} />}
     </div>
   )
 }

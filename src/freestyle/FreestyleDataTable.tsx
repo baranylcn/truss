@@ -9,6 +9,7 @@ import type { PipelineStep } from '../types'
 interface FreestyleDataTableProps {
   projectId: string
   activeStep: PipelineStep | null
+  onUploadRequest?: () => void
 }
 
 const STEP_AFFECTED_COLS: Partial<Record<PipelineStep, (info: { missing_values: Record<string, number>; categorical_columns: string[] | null }) => string[]>> = {
@@ -16,7 +17,7 @@ const STEP_AFFECTED_COLS: Partial<Record<PipelineStep, (info: { missing_values: 
   'encoding': (info) => info.categorical_columns ?? [],
 }
 
-export default function FreestyleDataTable({ projectId, activeStep }: FreestyleDataTableProps) {
+export default function FreestyleDataTable({ projectId, activeStep, onUploadRequest }: FreestyleDataTableProps) {
   const qc = useQueryClient()
   const [hoveredCol, setHoveredCol] = useState<string | null>(null)
   const [confirmCol, setConfirmCol] = useState<string | null>(null)
@@ -59,8 +60,16 @@ export default function FreestyleDataTable({ projectId, activeStep }: FreestyleD
 
   if (rows.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-sm text-[#64748b]">
-        No data available. Upload a dataset first.
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-sm text-[#64748b]">
+        <p>No data available.</p>
+        {onUploadRequest && (
+          <button
+            onClick={onUploadRequest}
+            className="px-4 py-2 bg-[#111827] border border-[#1e2a3a] hover:border-[#f97316] text-[#f97316] text-xs font-semibold rounded-lg transition-colors"
+          >
+            Upload Dataset
+          </button>
+        )}
       </div>
     )
   }

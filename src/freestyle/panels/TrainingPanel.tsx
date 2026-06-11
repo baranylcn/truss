@@ -8,13 +8,14 @@ import { StatCard, PanelFooter } from './MissingValuesPanel'
 
 interface Props { projectId: string; onApplied: () => void }
 
-type ModelType = 'xgboost' | 'random_forest' | 'logistic_regression'
+type ModelType = 'xgboost' | 'random_forest' | 'logistic_regression' | 'linear_regression'
 type TaskType  = 'classification' | 'regression'
 
 const MODELS: { value: ModelType; label: string; desc: string }[] = [
   { value: 'xgboost',             label: 'XGBoost',             desc: 'Gradient boosting. Fast and accurate.' },
   { value: 'random_forest',       label: 'Random Forest',       desc: 'Ensemble of decision trees. Robust.' },
   { value: 'logistic_regression', label: 'Logistic Regression', desc: 'Linear model. Classification only.' },
+  { value: 'linear_regression',   label: 'Linear Regression',   desc: 'OLS regression. Regression only.' },
 ]
 
 export default function TrainingPanel({ projectId, onApplied }: Props) {
@@ -45,7 +46,8 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
   }, [colOpen])
 
   const lockedClassification = model === 'logistic_regression'
-  const effectiveTaskType: TaskType = lockedClassification ? 'classification' : taskType
+  const lockedRegression     = model === 'linear_regression'
+  const effectiveTaskType: TaskType = lockedClassification ? 'classification' : lockedRegression ? 'regression' : taskType
 
   const trainMutation = useMutation({
     mutationFn: () => modelApi.train(projectId, {
@@ -127,8 +129,8 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
             {(['classification', 'regression'] as TaskType[]).map(t => (
               <button
                 key={t}
-                onClick={() => !lockedClassification && setTaskType(t)}
-                disabled={lockedClassification}
+                onClick={() => !lockedClassification && !lockedRegression && setTaskType(t)}
+                disabled={lockedClassification || lockedRegression}
                 className={`flex-1 py-2 rounded-lg border text-xs font-semibold transition-all ${
                   effectiveTaskType === t
                     ? 'border-[#f97316] bg-[#f9731608] text-white'
@@ -141,6 +143,9 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
           </div>
           {lockedClassification && (
             <p className="text-[10px] text-[#4a5568] mt-1">Logistic Regression is classification-only.</p>
+          )}
+          {lockedRegression && (
+            <p className="text-[10px] text-[#4a5568] mt-1">Linear Regression is regression-only.</p>
           )}
         </div>
 
