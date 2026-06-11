@@ -50,9 +50,7 @@ export default function ScalingPanel({ projectId, onApplied }: Props) {
 
   const columnsParam = allSelected ? undefined : Array.from(activeCols)
 
-  const canApply = numericCols.length > 0 && activeCols.size > 0 && (
-    panelMode === 'global' ? scaler !== null : (scaler !== null || Object.keys(colScalers).length > 0)
-  )
+  const canApply = numericCols.length > 0 && activeCols.size > 0 && scaler !== null
 
   const applyMutation = useMutation({
     mutationFn: () => {
@@ -168,7 +166,7 @@ export default function ScalingPanel({ projectId, onApplied }: Props) {
         disabled={!canApply}
         disabledHint={
           numericCols.length === 0 ? 'No numeric columns found.' :
-          scaler === null ? 'Select a scaler above.' :
+          scaler === null ? 'Select a default scaler above.' :
           activeCols.size === 0 ? 'Select at least one column.' : undefined
         }
       />

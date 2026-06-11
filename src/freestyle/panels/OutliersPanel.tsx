@@ -12,9 +12,9 @@ type DetMethod = 'iqr' | 'zscore'
 type Action = 'clip' | 'drop' | 'none'
 
 const ACTIONS: { value: Action; label: string; desc: string }[] = [
+  { value: 'none', label: 'Skip',      desc: 'Do not modify the data.' },
   { value: 'clip', label: 'Clip',      desc: 'Cap values at detection boundary.' },
   { value: 'drop', label: 'Drop Rows', desc: 'Remove rows that contain outliers.' },
-  { value: 'none', label: 'Skip',      desc: 'Do not modify the data.' },
 ]
 
 interface DetectedRow { col: string; count: number; pct: string }

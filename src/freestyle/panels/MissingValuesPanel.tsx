@@ -23,12 +23,18 @@ const CAT_OPTS: { value: CatMethod; label: string }[] = [
   { value: 'mode', label: 'Mode' },
   { value: 'drop', label: 'Drop Rows' },
 ]
-const COL_METHOD_OPTS: { value: ColMethod; label: string }[] = [
+// Per-column options split by type — categorical never gets mean/median
+const NUM_COL_OPTS: { value: ColMethod; label: string }[] = [
+  { value: 'none',   label: 'Skip' },
   { value: 'mean',   label: 'Mean' },
   { value: 'median', label: 'Median' },
   { value: 'mode',   label: 'Mode' },
   { value: 'drop',   label: 'Drop Rows' },
-  { value: 'none',   label: 'Skip' },
+]
+const CAT_COL_OPTS: { value: ColMethod; label: string }[] = [
+  { value: 'none', label: 'Skip' },
+  { value: 'mode', label: 'Mode' },
+  { value: 'drop', label: 'Drop Rows' },
 ]
 
 export default function MissingValuesPanel({ projectId, onApplied }: Props) {
@@ -52,6 +58,8 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
   const colsAffected = missingCols.length
   const totalCells = (data?.dataset_info.shape[0] ?? 0) * (allCols.length || 1)
   const rate = totalCells > 0 ? ((totalMissing / totalCells) * 100).toFixed(1) : '0.0'
+
+  const allSkipped = panelMode === 'global' && numMethod === 'none' && catMethod === 'none'
 
   const applyMutation = useMutation({
     mutationFn: () => {
@@ -79,9 +87,9 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         <div className="grid grid-cols-3 gap-2">
-          <StatCard label="MISSING"  value={String(totalMissing)} />
-          <StatCard label="COLS"     value={String(colsAffected)} />
-          <StatCard label="RATE"     value={`${rate}%`} />
+          <StatCard label="MISSING" value={String(totalMissing)} />
+          <StatCard label="COLS"    value={String(colsAffected)} />
+          <StatCard label="RATE"    value={`${rate}%`} />
         </div>
 
         <ModeToggle mode={panelMode} onChange={m => { setPanelMode(m); setColMethods({}) }} />
@@ -112,14 +120,16 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
             {missingCols.length === 0
               ? <p className="text-xs text-[#4a5568] text-center py-4">No columns with missing values.</p>
               : missingCols.map(col => {
+                  const isCat = catCols.has(col)
                   return (
                     <ColMethodRow
                       key={col}
                       col={col}
                       count={missing[col]}
                       value={colMethods[col] ?? 'none'}
-                      options={COL_METHOD_OPTS}
+                      options={isCat ? CAT_COL_OPTS : NUM_COL_OPTS}
                       overridden={colMethods[col] !== undefined}
+                      badge={isCat ? { label: 'C', color: '#a78bfa' } : { label: 'N', color: '#34d399' }}
                       onChange={v => setColMethods(p => ({ ...p, [col]: v as ColMethod }))}
                       onReset={() => setColMethods(p => { const n = { ...p }; delete n[col]; return n })}
                     />
@@ -127,7 +137,8 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
                 })
             }
             <p className="text-[10px] text-[#374151] mt-2">
-              Default: numeric → {numMethod}, categorical → {catMethod}. Override per column above.
+              <span className="text-[#34d399]">N</span> = numeric &nbsp;
+              <span className="text-[#a78bfa]">C</span> = categorical. Default: Skip.
             </p>
           </div>
         )}
@@ -136,14 +147,18 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
       <PanelFooter
         onApply={() => applyMutation.mutate()}
         pending={applyMutation.isPending}
-        disabled={totalMissing === 0}
-        disabledHint={totalMissing === 0 ? 'No missing values found.' : (numMethod === 'none' && catMethod === 'none' && panelMode === 'global') ? 'Both methods set to Skip — no changes will be made.' : undefined}
+        disabled={totalMissing === 0 || allSkipped}
+        disabledHint={
+          totalMissing === 0 ? 'No missing values found.' :
+          allSkipped ? 'Both methods set to Skip — select a strategy.' :
+          undefined
+        }
       />
     </div>
   )
 }
 
-// ── shared helpers (exported for other panels) ─────────────────────────────
+// ── shared helpers ─────────────────────────────────────────────────────────
 
 export function ModeToggle({ mode, onChange }: { mode: 'global' | 'per_column'; onChange: (m: 'global' | 'per_column') => void }) {
   return (
@@ -162,7 +177,7 @@ export function ModeToggle({ mode, onChange }: { mode: 'global' | 'per_column'; 
 }
 
 export function ColMethodRow({
-  col, count, value, options, overridden, onChange, onReset,
+  col, count, value, options, overridden, onChange, onReset, badge,
 }: {
   col: string
   count?: number
@@ -171,9 +186,13 @@ export function ColMethodRow({
   overridden: boolean
   onChange: (v: string) => void
   onReset: () => void
+  badge?: { label: string; color: string }
 }) {
   return (
     <div className={`flex items-center gap-2 py-1.5 px-2 rounded-lg mb-1 ${overridden ? 'bg-[#f9731606] border border-[#f9731630]' : 'border border-transparent'}`}>
+      {badge && (
+        <span className="text-[9px] font-bold flex-shrink-0 w-3 text-center" style={{ color: badge.color }}>{badge.label}</span>
+      )}
       <span className="text-[11px] font-mono text-[#94a3b8] truncate flex-1 min-w-0" title={col}>{col}</span>
       {count !== undefined && (
         <span className="text-[10px] text-[#4a5568] font-mono flex-shrink-0">{count}</span>

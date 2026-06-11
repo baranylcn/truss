@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -12,9 +12,9 @@ type ModelType = 'xgboost' | 'random_forest' | 'logistic_regression'
 type TaskType  = 'classification' | 'regression'
 
 const MODELS: { value: ModelType; label: string; desc: string }[] = [
-  { value: 'xgboost',             label: 'XGBoost',              desc: 'Gradient boosting. Fast and accurate.' },
-  { value: 'random_forest',       label: 'Random Forest',        desc: 'Ensemble of decision trees. Robust.' },
-  { value: 'logistic_regression', label: 'Logistic Regression',  desc: 'Linear model. Classification only.' },
+  { value: 'xgboost',             label: 'XGBoost',             desc: 'Gradient boosting. Fast and accurate.' },
+  { value: 'random_forest',       label: 'Random Forest',       desc: 'Ensemble of decision trees. Robust.' },
+  { value: 'logistic_regression', label: 'Logistic Regression', desc: 'Linear model. Classification only.' },
 ]
 
 export default function TrainingPanel({ projectId, onApplied }: Props) {
@@ -24,6 +24,7 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
   const [taskType, setTaskType] = useState<TaskType>('classification')
   const [testSize, setTestSize] = useState(20)
   const [colOpen, setColOpen]   = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const { data } = useQuery({
     queryKey: ['analyze', projectId],
@@ -34,10 +35,17 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
   const columns = data?.dataset_info.columns ?? []
   const shape = data?.dataset_info.shape
 
+  useEffect(() => {
+    if (!colOpen) return
+    const handler = (e: MouseEvent) => {
+      if (!dropdownRef.current?.contains(e.target as Node)) setColOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [colOpen])
+
   const lockedClassification = model === 'logistic_regression'
   const effectiveTaskType: TaskType = lockedClassification ? 'classification' : taskType
-
-  const canTrain = !!target
 
   const trainMutation = useMutation({
     mutationFn: () => modelApi.train(projectId, {
@@ -63,9 +71,8 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-        {/* Stats */}
         <div className="grid grid-cols-2 gap-2">
-          <StatCard label="ROWS"    value={shape ? shape[0].toLocaleString() : '-'} />
+          <StatCard label="ROWS"     value={shape ? shape[0].toLocaleString() : '-'} />
           <StatCard label="FEATURES" value={shape && target ? String(shape[1] - 1) : shape ? String(shape[1]) : '-'} />
         </div>
 
@@ -89,7 +96,7 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
         {/* Target column */}
         <div>
           <p className="text-[10px] font-semibold text-[#4a5568] uppercase tracking-widest mb-1.5">Target Column</p>
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setColOpen(v => !v)}
               className="w-full flex items-center justify-between px-3 py-2 bg-[#111827] border border-[#1e2a3a] hover:border-[#2d3748] rounded-lg text-xs transition-colors"
@@ -161,8 +168,8 @@ export default function TrainingPanel({ projectId, onApplied }: Props) {
       <PanelFooter
         onApply={() => trainMutation.mutate()}
         pending={trainMutation.isPending}
-        disabled={!canTrain}
-        disabledHint={!canTrain ? 'Select a target column to train.' : undefined}
+        disabled={!target}
+        disabledHint={!target ? 'Select a target column to train.' : undefined}
       />
     </div>
   )

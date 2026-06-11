@@ -32,9 +32,7 @@ export default function EncodingPanel({ projectId, onApplied }: Props) {
 
   const catCols = data?.dataset_info.categorical_columns ?? []
 
-  const canApply = catCols.length > 0 && (
-    panelMode === 'global' ? method !== null : (method !== null || Object.keys(colMethods).length > 0)
-  )
+  const canApply = catCols.length > 0 && method !== null
 
   const hasOneHot = panelMode === 'global'
     ? method === 'onehot'
@@ -122,7 +120,7 @@ export default function EncodingPanel({ projectId, onApplied }: Props) {
         onApply={() => applyMutation.mutate()}
         pending={applyMutation.isPending}
         disabled={!canApply}
-        disabledHint={catCols.length === 0 ? 'No categorical columns found.' : method === null ? 'Select an encoding method above.' : undefined}
+        disabledHint={catCols.length === 0 ? 'No categorical columns found.' : method === null ? 'Select a default method above.' : undefined}
       />
     </div>
   )
