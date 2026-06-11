@@ -6,9 +6,15 @@ import { datasetApi } from '../../services/api/dataset'
 import { preprocessingApi } from '../../services/api/preprocessing'
 import { Section, OptionCard, StatCard, PanelFooter } from './MissingValuesPanel'
 
-interface Props { projectId: string; onApplied: () => void }
+interface OutlierResult { count: number; values: number[]; method: string }
 
-type DetMethod = 'iqr' | 'zscore'
+interface Props {
+  projectId: string
+  onApplied: () => void
+  onDetected?: (results: Record<string, OutlierResult>, totalRows: number) => void
+}
+
+type DetMethod   = 'iqr' | 'zscore'
 type Action = 'clip' | 'drop' | 'none'
 
 const ACTIONS: { value: Action; label: string; desc: string }[] = [
@@ -19,7 +25,7 @@ const ACTIONS: { value: Action; label: string; desc: string }[] = [
 
 interface DetectedRow { col: string; count: number; pct: string }
 
-export default function OutliersPanel({ projectId, onApplied }: Props) {
+export default function OutliersPanel({ projectId, onApplied, onDetected }: Props) {
   const qc = useQueryClient()
   const [method, setMethod]   = useState<DetMethod>('iqr')
   const [action, setAction]   = useState<Action>('none')
@@ -64,8 +70,14 @@ export default function OutliersPanel({ projectId, onApplied }: Props) {
           pct: analyzeData ? ((v.count / analyzeData.dataset_info.shape[0]) * 100).toFixed(1) + '%' : '-',
         }))
       setDetected(rows)
-      if (rows.length === 0) toast.success('No outliers detected')
-      else toast.success(`${rows.length} column(s) have outliers`)
+      if (rows.length === 0) {
+        toast.success('No outliers detected')
+      } else {
+        toast.success(`${rows.length} column(s) have outliers`)
+        if (onDetected && analyzeData) {
+          onDetected(res.outlier_results, analyzeData.dataset_info.shape[0])
+        }
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   })
@@ -151,15 +163,9 @@ export default function OutliersPanel({ projectId, onApplied }: Props) {
         </button>
 
         {detected && detected.length > 0 && (
-          <div className="bg-[#111827] border border-[#1e2a3a] rounded-lg overflow-hidden">
-            <p className="text-[9px] font-semibold text-[#4a5568] uppercase tracking-widest px-3 py-2 border-b border-[#1e2a3a]">Results</p>
-            {detected.map(r => (
-              <div key={r.col} className="flex items-center justify-between px-3 py-1.5 border-b border-[#1e2a3a] last:border-0">
-                <span className="text-[11px] font-mono text-[#e2e8f0] truncate max-w-[120px]">{r.col}</span>
-                <span className="text-[11px] font-mono text-[#f97316]">{r.count} ({r.pct})</span>
-              </div>
-            ))}
-          </div>
+          <p className="text-xs text-[#22c55e] text-center py-1">
+            {detected.length} column(s) affected — see overlay for details.
+          </p>
         )}
         {detected?.length === 0 && (
           <p className="text-xs text-[#22c55e] text-center py-2">No outliers detected.</p>

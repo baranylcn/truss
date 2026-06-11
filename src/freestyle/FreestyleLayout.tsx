@@ -4,6 +4,10 @@ import FreestyleDataTable from './FreestyleDataTable'
 import FreestyleDrawer from './FreestyleDrawer'
 import FreestyleBottomBar from './FreestyleBottomBar'
 import FreestyleUploadModal from './FreestyleUploadModal'
+import ResultOverlay from './ResultOverlay'
+import AnalyzeOverlay from './overlays/AnalyzeOverlay'
+import OutliersOverlay from './overlays/OutliersOverlay'
+import CorrelationOverlay from './overlays/CorrelationOverlay'
 import type { AppPage, PipelineStep } from '../types'
 
 interface FreestyleLayoutProps {
@@ -15,20 +19,31 @@ interface FreestyleLayoutProps {
   onNewProject: () => void
 }
 
-// View steps use a full overlay; action steps open the right drawer
-const VIEW_STEPS   = new Set<PipelineStep>(['analyze', 'correlation', 'evaluation'])
-const DRAWER_STEPS = new Set<PipelineStep>(['missing-values', 'outliers', 'encoding', 'scaling', 'training'])
+// Step kind system:
+//   operation — drawer only, applies data changes (Missing Values, Encoding, Scaling, Training)
+//   mixed     — drawer for settings, overlay for results (Outliers, Correlation)
+//   view      — overlay only, top bar button (Analyze)
+
+const DRAWER_STEPS = new Set<PipelineStep>(['missing-values', 'outliers', 'encoding', 'scaling', 'training', 'correlation', 'evaluation', 'optimization'])
 
 const STEP_STATUS_TEXT: Partial<Record<PipelineStep, string>> = {
   'missing-values': 'Select a handling strategy and click Apply & Update Preview.',
-  'outliers':       'Review detected outliers and choose an action.',
+  'outliers':       'Detect outliers to see results, then choose an action.',
   'encoding':       'Select columns to encode and choose a method.',
   'scaling':        'Select numeric columns and choose a scaler.',
   'training':       'Configure your model and start training.',
   'evaluation':     'Review model performance metrics.',
-  'correlation':    'Inspect the Pearson correlation matrix.',
+  'correlation':    'Select a method and compute the correlation matrix.',
+  'evaluation':     'Review model performance metrics and feature importance.',
+  'optimization':   'Run hyperparameter search to improve model performance.',
   'export':         'Export your trained model and results.',
 }
+
+type OverlayState =
+  | { type: 'analyze' }
+  | { type: 'outliers'; results: Record<string, { count: number; values: number[]; method: string }>; totalRows: number }
+  | { type: 'correlation'; matrix: Record<string, Record<string, number>>; columns: string[] }
+  | null
 
 export default function FreestyleLayout({
   projectId,
@@ -40,27 +55,22 @@ export default function FreestyleLayout({
 }: FreestyleLayoutProps) {
   const [openDrawerStep, setOpenDrawerStep] = useState<PipelineStep | null>(null)
   const [completedSteps, setCompletedSteps] = useState<Set<PipelineStep>>(new Set())
+  const [overlay, setOverlay] = useState<OverlayState>(null)
 
-  // Show upload modal until first file is loaded
   const showUpload = currentStep === 'upload'
 
   const handleUploadDone = () => {
-    // Dismiss upload modal, land on table — no analyze step
     onStepChange('missing-values')
   }
 
   const handleUploadCancel = () => {
-    // Go back to guided/dashboard
     onSwitchToGuided()
     onPageChange('dashboard')
   }
 
   const handleStepSelect = (step: PipelineStep) => {
     onStepChange(step)
-    if (VIEW_STEPS.has(step)) {
-      // TODO: open full-screen overlay for view steps (analyze, correlation, evaluation)
-      setOpenDrawerStep(null)
-    } else if (DRAWER_STEPS.has(step)) {
+    if (DRAWER_STEPS.has(step)) {
       setOpenDrawerStep(step)
     } else {
       setOpenDrawerStep(null)
@@ -70,6 +80,16 @@ export default function FreestyleLayout({
   const handleApplied = () => {
     if (openDrawerStep) {
       setCompletedSteps(prev => new Set(prev).add(openDrawerStep))
+    }
+  }
+
+  const handleOpenOverlay = (overlayType: 'outliers' | 'correlation', data: unknown) => {
+    if (overlayType === 'outliers') {
+      const { results, totalRows } = data as { results: Record<string, { count: number; values: number[]; method: string }>; totalRows: number }
+      setOverlay({ type: 'outliers', results, totalRows })
+    } else if (overlayType === 'correlation') {
+      const { matrix, columns } = data as { matrix: Record<string, Record<string, number>>; columns: string[] }
+      setOverlay({ type: 'correlation', matrix, columns })
     }
   }
 
@@ -91,10 +111,11 @@ export default function FreestyleLayout({
           onStepSelect={handleStepSelect}
           onPageChange={onPageChange}
           onNewProject={onNewProject}
+          onAnalyze={() => setOverlay({ type: 'analyze' })}
         />
       </div>
 
-      {/* Main area: table + optional right drawer */}
+      {/* Main area: table + optional right drawer + overlay */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative', zIndex: 0 }}>
         <FreestyleDataTable
           projectId={projectId}
@@ -107,7 +128,27 @@ export default function FreestyleLayout({
             step={openDrawerStep}
             onClose={() => setOpenDrawerStep(null)}
             onApplied={handleApplied}
+            onOpenOverlay={handleOpenOverlay}
           />
+        )}
+
+        {/* Overlay rendered inside the main area (inset-0 relative) */}
+        {overlay?.type === 'analyze' && (
+          <ResultOverlay title="Dataset Analysis" onClose={() => setOverlay(null)}>
+            <AnalyzeOverlay projectId={projectId} />
+          </ResultOverlay>
+        )}
+
+        {overlay?.type === 'outliers' && (
+          <ResultOverlay title="Outlier Detection Results" onClose={() => setOverlay(null)}>
+            <OutliersOverlay results={overlay.results} totalRows={overlay.totalRows} />
+          </ResultOverlay>
+        )}
+
+        {overlay?.type === 'correlation' && (
+          <ResultOverlay title="Correlation Matrix" onClose={() => setOverlay(null)}>
+            <CorrelationOverlay matrix={overlay.matrix} columns={overlay.columns} />
+          </ResultOverlay>
         )}
       </div>
 

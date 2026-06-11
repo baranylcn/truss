@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Menu, ChevronDown, Download, Settings, CheckCircle2, Circle } from 'lucide-react'
+import { Menu, ChevronDown, Download, Settings, CheckCircle2, Circle, BarChart2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
 import { datasetApi } from '../services/api/dataset'
@@ -12,6 +12,7 @@ interface FreestyleTopBarProps {
   onStepSelect: (step: PipelineStep) => void
   onPageChange: (page: AppPage) => void
   onNewProject: () => void
+  onAnalyze: () => void
 }
 
 const PIPELINE_DROPDOWN_STEPS: { id: PipelineStep; label: string }[] = [
@@ -48,6 +49,7 @@ export default function FreestyleTopBar({
   onStepSelect,
   onPageChange,
   onNewProject,
+  onAnalyze,
 }: FreestyleTopBarProps) {
   const { signOut } = useAuth()
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
@@ -185,6 +187,14 @@ export default function FreestyleTopBar({
             </div>
           )}
         </div>
+
+        <button
+          onClick={onAnalyze}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#111827] border border-[#1e2a3a] hover:border-[#2d3748] text-xs text-[#94a3b8] hover:text-white rounded-lg transition-all"
+        >
+          <BarChart2 size={12} />
+          Analyze
+        </button>
 
         <button
           onClick={() => onStepSelect('export')}
