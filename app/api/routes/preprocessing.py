@@ -318,6 +318,40 @@ async def scaling(
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
+@router.post("/rename-column/{project_id}", response_model=PreprocessingResponse)
+async def rename_column(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Renames a single column in the cached DataFrame."""
+    old_name: str = body.get("old_name", "")
+    new_name: str = body.get("new_name", "").strip()
+    if not old_name or not new_name:
+        raise HTTPException(status_code=400, detail="old_name and new_name are required")
+    if old_name == new_name:
+        raise HTTPException(status_code=400, detail="New name is the same as the old name")
+
+    df = await _load_df_or_404(project_id, current_user, db)
+
+    if old_name not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{old_name}' not found")
+    if new_name in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{new_name}' already exists")
+
+    df_new = df.rename(columns={old_name: new_name})
+    await set_dataframe(project_id, df_new)
+
+    tags = await get_column_tags(project_id)
+    if old_name in tags:
+        tags[new_name] = tags.pop(old_name)
+        await set_column_tags(project_id, tags)
+
+    await _save_pipeline_state(project_id, "rename_column", {"old_name": old_name, "new_name": new_name}, df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
+
+
 @router.post("/drop-columns/{project_id}", response_model=PreprocessingResponse)
 async def drop_columns(
     project_id: str,
@@ -340,6 +374,61 @@ async def drop_columns(
     await set_dataframe(project_id, df_new)
     await _update_column_tags(project_id, "drop_columns", {"dropped_columns": columns}, df, df_new)
     await _save_pipeline_state(project_id, "drop_columns", {"dropped_columns": columns}, df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
+
+
+@router.post("/filter-rows/{project_id}", response_model=PreprocessingResponse)
+async def filter_rows(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Filters or deduplicates rows in the cached DataFrame."""
+    operation: str = body.get("operation", "")
+    df = await _load_df_or_404(project_id, current_user, db)
+
+    if operation == "drop_duplicates":
+        df_new = df.drop_duplicates()
+    elif operation == "filter":
+        column: str = body.get("column", "")
+        operator: str = body.get("operator", "")
+        value: str = body.get("value", "")
+        if not column or not operator or value == "":
+            raise HTTPException(status_code=400, detail="column, operator, and value are required for filter operation")
+        if column not in df.columns:
+            raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
+        try:
+            import numpy as np  # noqa: F401
+            col_series = df[column]
+            is_numeric = pd.api.types.is_numeric_dtype(col_series)
+            parsed_val: float | str = float(value) if is_numeric else value
+            ops = {
+                ">": col_series > parsed_val,
+                ">=": col_series >= parsed_val,
+                "<": col_series < parsed_val,
+                "<=": col_series <= parsed_val,
+                "==": col_series == parsed_val,
+                "!=": col_series != parsed_val,
+                "contains": col_series.astype(str).str.contains(str(value), na=False),
+                "not_contains": ~col_series.astype(str).str.contains(str(value), na=False),
+            }
+            if operator not in ops:
+                raise HTTPException(status_code=400, detail=f"Unknown operator '{operator}'")
+            mask = ops[operator]
+            df_new = df[mask]
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Filter error: {exc}")
+    else:
+        raise HTTPException(status_code=400, detail="operation must be 'filter' or 'drop_duplicates'")
+
+    rows_removed = len(df) - len(df_new)
+    if len(df_new) == 0:
+        raise HTTPException(status_code=400, detail="Filter would remove all rows. Adjust your condition.")
+
+    df_new = df_new.reset_index(drop=True)
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "filter_rows", {**body, "rows_removed": rows_removed}, df_new, db)
     return sanitize_for_json(df_to_payload(df_new, project_id))
 
 
