@@ -50,6 +50,7 @@ export default function EncodingPanel({ projectId, onApplied }: Props) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success('Encoding applied')
       onApplied()
     },

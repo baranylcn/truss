@@ -86,6 +86,7 @@ export default function OutliersPanel({ projectId, onApplied, onDetected }: Prop
     mutationFn: () => preprocessingApi.outliers(projectId, { method, action, factor, columns: colsParam }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success(action === 'none' ? 'Step skipped' : 'Outliers handled')
       onApplied()
     },

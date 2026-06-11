@@ -89,6 +89,7 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success('Missing values handled')
       onApplied()
     },

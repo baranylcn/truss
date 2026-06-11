@@ -63,6 +63,7 @@ export default function FeatureEngineeringPanel({ projectId, onApplied }: Props)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       if (operation === 'cast') toast.success(`Column "${singleCol}" cast to ${castDtype}`)
       else if (operation === 'replace') toast.success('Values replaced')
       else { toast.success(`Column "${newCol}" created`); setNewCol('') }

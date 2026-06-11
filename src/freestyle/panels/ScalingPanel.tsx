@@ -68,6 +68,7 @@ export default function ScalingPanel({ projectId, onApplied }: Props) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success('Scaling applied')
       onApplied()
     },

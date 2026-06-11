@@ -50,6 +50,7 @@ export default function FilterRowsPanel({ projectId, onApplied }: Props) {
         : preprocessingApi.filterRows(projectId, column, operator, value),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       const newRows = (res as { shape?: [number, number] }).shape?.[0]
       const msg = mode === 'duplicates'
         ? `Duplicates removed${newRows != null ? ` — ${newRows} rows remain` : ''}`

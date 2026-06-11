@@ -35,6 +35,7 @@ export default function FreestyleDataTable({ projectId, activeStep, onUploadRequ
     mutationFn: (col: string) => preprocessingApi.dropColumns(projectId, [col]),
     onSuccess: (_, col) => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success(`"${col}" dropped`)
       setConfirmCol(null)
     },
@@ -49,6 +50,7 @@ export default function FreestyleDataTable({ projectId, activeStep, onUploadRequ
       preprocessingApi.renameColumn(projectId, oldName, newName),
     onSuccess: (_, { oldName, newName }) => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success(`"${oldName}" → "${newName}"`)
       setRenamingCol(null)
     },

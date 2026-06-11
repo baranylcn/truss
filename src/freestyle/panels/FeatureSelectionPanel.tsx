@@ -23,6 +23,7 @@ export default function FeatureSelectionPanel({ projectId, onApplied }: Props) {
     mutationFn: () => preprocessingApi.dropColumns(projectId, Array.from(selectedDrop)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['analyze', projectId] })
+      qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       toast.success(`${selectedDrop.size} column(s) dropped`)
       setSelectedDrop(new Set())
       setAnalyzed(false)
