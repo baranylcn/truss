@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from functools import partial
 
 import numpy as np
@@ -578,6 +579,167 @@ async def correlation(
     payload = {"correlation_matrix": matrix, "columns": cols, "method": method}
     await set_correlation_cache(project_id, payload, cache_key_method)
     return payload
+
+
+@router.post("/cast-column/{project_id}", response_model=PreprocessingResponse)
+async def cast_column(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Casts a column to a different data type (numeric, string, datetime, category)."""
+    column: str = body.get("column", "")
+    dtype: str = body.get("dtype", "")
+    if not column or not dtype:
+        raise HTTPException(status_code=400, detail="column and dtype are required")
+
+    df = await _load_df_or_404(project_id, current_user, db)
+
+    if column not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
+
+    df_new = df.copy()
+    try:
+        if dtype == "numeric":
+            df_new[column] = pd.to_numeric(df_new[column], errors="coerce")
+        elif dtype == "string":
+            df_new[column] = df_new[column].astype(str)
+        elif dtype == "category":
+            df_new[column] = df_new[column].astype("category")
+        elif dtype == "datetime":
+            df_new[column] = pd.to_datetime(df_new[column], errors="coerce")
+        else:
+            raise HTTPException(status_code=400, detail="dtype must be 'numeric', 'string', 'category', or 'datetime'")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cast failed: {exc}")
+
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(project_id, "cast_column", {"column": column, "dtype": dtype}, df_new, db)
+    return sanitize_for_json(df_to_payload(df_new, project_id))
+
+
+@router.post("/replace-values/{project_id}", response_model=PreprocessingResponse)
+async def replace_values(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Replaces all occurrences of old_value with new_value in a column (use null to replace with NaN)."""
+    column: str = body.get("column", "")
+    old_value = body.get("old_value")
+    new_value = body.get("new_value")  # None → NaN
+
+    if not column:
+        raise HTTPException(status_code=400, detail="column is required")
+    if "old_value" not in body:
+        raise HTTPException(status_code=400, detail="old_value is required")
+
+    df = await _load_df_or_404(project_id, current_user, db)
+    if column not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
+
+    df_new = df.copy()
+    replace_with = new_value if new_value is not None else np.nan
+    if pd.api.types.is_numeric_dtype(df_new[column]) and old_value is not None:
+        try:
+            old_value = float(old_value)
+        except (ValueError, TypeError):
+            pass
+    df_new[column] = df_new[column].replace(old_value, replace_with)
+
+    await set_dataframe(project_id, df_new)
+    await _save_pipeline_state(
+        project_id, "replace_values",
+        {"column": column, "old_value": str(old_value), "new_value": str(new_value)},
+        df_new, db,
+    )
+    return sanitize_for_json(df_to_payload(df_new, project_id))
+
+
+@router.get("/pipeline-history/{project_id}")
+async def pipeline_history(
+    project_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Returns the last 50 pipeline steps applied to the project (newest first)."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == parse_project_id(project_id),
+            Project.user_id == current_user.id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    states_result = await db.execute(
+        select(PipelineState)
+        .where(PipelineState.project_id == parse_project_id(project_id))
+        .order_by(PipelineState.created_at.desc())
+        .limit(50)
+    )
+    states = list(states_result.scalars().all())
+
+    return {
+        "history": [
+            {
+                "id": str(s.id),
+                "step_name": s.step_name,
+                "config": s.config,
+                "created_at": s.created_at.isoformat(),
+            }
+            for s in states
+        ]
+    }
+
+
+@router.post("/restore/{project_id}", response_model=PreprocessingResponse)
+async def restore_snapshot(
+    project_id: str,
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Restores the DataFrame to the state saved at a specific pipeline step."""
+    state_id_str: str = body.get("state_id", "")
+    if not state_id_str:
+        raise HTTPException(status_code=400, detail="state_id is required")
+
+    try:
+        state_uuid = uuid.UUID(state_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid state_id format")
+
+    result = await db.execute(
+        select(Project).where(
+            Project.id == parse_project_id(project_id),
+            Project.user_id == current_user.id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    state_result = await db.execute(
+        select(PipelineState).where(
+            PipelineState.id == state_uuid,
+            PipelineState.project_id == parse_project_id(project_id),
+        )
+    )
+    state = state_result.scalar_one_or_none()
+    if state is None:
+        raise HTTPException(status_code=404, detail="Pipeline state not found")
+
+    snapshot = state.data_snapshot or {}
+    if not snapshot.get("columns") or snapshot.get("data") is None:
+        raise HTTPException(status_code=400, detail="Snapshot data is incomplete")
+
+    df = pd.DataFrame(snapshot["data"], columns=snapshot["columns"])
+    await set_dataframe(project_id, df)
+    return sanitize_for_json(df_to_payload(df, project_id))
 
 
 @router.get("/column-tags/{project_id}", response_model=ColumnTagsResponse)

@@ -58,5 +58,23 @@ class OptimizeResponse(BaseModel):
   strategy: str
 
 
+class CrossValidateRequest(BaseModel):
+  model_type: str
+  target_column: str
+  n_splits: int = 5
+  task_type: Optional[str] = None
+  hyperparameters: dict = {}
+
+
+class CrossValidateResponse(BaseModel):
+  fold_scores: List[float]
+  mean_score: float
+  std_score: float
+  n_splits: int
+  task_type: str
+  scoring: str
+  model_type: str
+
+
 class PredictRequest(BaseModel):
   data: List[List[Any]]

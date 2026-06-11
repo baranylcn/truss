@@ -5,7 +5,8 @@ from functools import partial
 from typing import List
 
 import joblib
-from fastapi import APIRouter, Depends, HTTPException
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sklearn.model_selection import train_test_split
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +17,8 @@ from app.core.storage import get_or_restore_dataframe
 from app.core.redis import acquire_training_lock, release_training_lock
 from app.services.db import get_db
 from app.services.models import User, Project, TrainedModel
-from app.services.ml_pipeline import train_model, optimize_hyperparams
-from app.schemas.model import TrainRequest, TrainResponse, EvaluateResponse, OptimizeRequest, OptimizeResponse
+from app.services.ml_pipeline import train_model, optimize_hyperparams, cross_validate_model
+from app.schemas.model import TrainRequest, TrainResponse, EvaluateResponse, OptimizeRequest, OptimizeResponse, CrossValidateRequest, CrossValidateResponse
 from app.utils.json_sanitize import sanitize_for_json
 from app.utils.uuid_helpers import parse_project_id
 
@@ -274,6 +275,155 @@ async def _get_best_model_and_df(project_id: str, current_user: User, db: AsyncS
         raise HTTPException(status_code=404, detail="Project data not found. Please re-upload.")
 
     return best_model, df
+
+
+@router.get("/class-balance/{project_id}")
+async def class_balance(
+    project_id: str,
+    target_column: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Returns class frequency distribution and imbalance ratio for a target column."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == parse_project_id(project_id),
+            Project.user_id == current_user.id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    df = await get_or_restore_dataframe(project_id)
+    if df is None:
+        raise HTTPException(status_code=404, detail="Dataset not found. Please re-upload.")
+    if target_column not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{target_column}' not found")
+
+    counts = df[target_column].dropna().value_counts()
+    total = int(counts.sum())
+    classes = [
+        {"label": str(k), "count": int(v), "pct": round(float(v) / total * 100, 1)}
+        for k, v in counts.items()
+    ]
+    imbalance_ratio = round(float(counts.max() / counts.min()), 2) if len(counts) > 1 and counts.min() > 0 else 1.0
+    return {
+        "classes": classes,
+        "imbalance_ratio": imbalance_ratio,
+        "is_imbalanced": imbalance_ratio > 3.0,
+        "n_classes": len(counts),
+    }
+
+
+@router.post("/cross-validate/{project_id}", response_model=CrossValidateResponse)
+async def cross_validate(
+    project_id: str,
+    body: CrossValidateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Runs k-fold cross-validation and returns per-fold scores with mean ± std."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == parse_project_id(project_id),
+            Project.user_id == current_user.id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    df = await get_or_restore_dataframe(project_id)
+    if df is None:
+        raise HTTPException(status_code=404, detail="Dataset not found. Please re-upload.")
+
+    if body.n_splits < 2 or body.n_splits > 20:
+        raise HTTPException(status_code=400, detail="n_splits must be between 2 and 20")
+
+    if not await acquire_training_lock(project_id):
+        raise HTTPException(status_code=409, detail="Training or optimization already in progress for this project.")
+
+    try:
+        loop = asyncio.get_running_loop()
+        cv_result = await loop.run_in_executor(
+            None,
+            partial(
+                cross_validate_model,
+                df=df,
+                model_type=body.model_type,
+                target_column=body.target_column,
+                n_splits=body.n_splits,
+                task_type_override=body.task_type,
+                hyperparameters=body.hyperparameters,
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception(f"Cross-validation failed for project {project_id}")
+        raise HTTPException(status_code=500, detail=f"Cross-validation failed: {exc}")
+    finally:
+        await release_training_lock(project_id)
+
+    return cv_result
+
+
+@router.post("/batch-predict/{project_id}")
+async def batch_predict(
+    project_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Accepts a CSV upload, runs best-model predictions on it, and returns a CSV with predictions appended."""
+    best_model, df_train = await _get_best_model_and_df(project_id, current_user, db)
+
+    try:
+        contents = await asyncio.wait_for(file.read(), timeout=30)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=408, detail="File upload timed out")
+
+    try:
+        df_new = pd.read_csv(io.BytesIO(contents))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not parse CSV: {exc}")
+
+    def _run_predictions():
+        pipe, _, _ = train_model(
+            df=df_train,
+            model_type=best_model.model_type,
+            target_column=best_model.target_column,
+            test_size=0.2,
+            hyperparameters=best_model.parameters or {},
+            task_type_override=best_model.task_type,
+        )
+        import numpy as np
+        X_new = df_new.copy()
+        if best_model.target_column in X_new.columns:
+            X_new = X_new.drop(columns=[best_model.target_column])
+        bool_cols = [c for c in X_new.columns if X_new[c].dtype == bool]
+        if bool_cols:
+            X_new = X_new.copy()
+            X_new[bool_cols] = X_new[bool_cols].astype(np.int8)
+        predictions = pipe.predict(X_new)
+        out = df_new.copy()
+        out["predicted"] = predictions
+        buf = io.StringIO()
+        out.to_csv(buf, index=False)
+        return buf.getvalue()
+
+    loop = asyncio.get_running_loop()
+    try:
+        csv_content = await loop.run_in_executor(None, _run_predictions)
+    except Exception as exc:
+        logger.exception(f"Batch prediction failed for project {project_id}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}")
+
+    filename = f"batch_predictions_{project_id[:8]}.csv"
+    return StreamingResponse(
+        io.BytesIO(csv_content.encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.get("/export/predictions/{project_id}")

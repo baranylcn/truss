@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Tuple
 import numpy as np
 import pandas as pd
 import logging
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, KFold
 from sklearn.metrics import (
   accuracy_score,
   precision_score,
@@ -568,6 +568,8 @@ def train_model(
   elif model_type == "random_forest":
     rf_bootstrap = bool(_get_hp(hp, "bootstrap", True))
     rf_oob = bool(_get_hp(hp, "oob_score", False)) and rf_bootstrap  # oob_score requires bootstrap=True
+    raw_rf_cw = _get_hp(hp, "class_weight", None) if task_type == "classification" else None
+    rf_class_weight = raw_rf_cw if raw_rf_cw in ("balanced", "balanced_subsample") else None
     base_model = (RandomForestClassifier if task_type == "classification" else RandomForestRegressor)(
       n_estimators=int(_get_hp(hp, "n_estimators", 100)),
       max_depth=int(_get_hp(hp, "max_depth", 10)) if _get_hp(hp, "max_depth", None) else None,
@@ -577,6 +579,7 @@ def train_model(
       bootstrap=rf_bootstrap,
       criterion=_get_hp(hp, "criterion", "gini" if task_type == "classification" else "squared_error"),
       oob_score=rf_oob,
+      class_weight=rf_class_weight,
       random_state=42,
     )
 
@@ -663,3 +666,115 @@ def train_model(
     logger.warning(f"Feature importance extraction failed: {fi_exc}")
 
   return pipe, task_type, metrics
+
+
+def cross_validate_model(
+  df: pd.DataFrame,
+  model_type: str,
+  target_column: str,
+  n_splits: int = 5,
+  task_type_override: str | None = None,
+  hyperparameters: dict | None = None,
+) -> Dict[str, Any]:
+  """Runs stratified/regular k-fold CV and returns per-fold scores, mean, and std."""
+  if target_column not in df.columns:
+    raise ValueError(f"Target column '{target_column}' not found in DataFrame")
+
+  df_clean = df.dropna(subset=[target_column])
+  X = df_clean.drop(columns=[target_column]).dropna()
+  y = df_clean[target_column].loc[X.index]
+
+  if len(X) < n_splits * 2:
+    raise ValueError(f"Not enough rows ({len(X)}) for {n_splits}-fold CV. Need at least {n_splits * 2}.")
+
+  bool_cols = [c for c in X.columns if X[c].dtype == bool]
+  if bool_cols:
+    X = X.copy()
+    X[bool_cols] = X[bool_cols].astype(np.int8)
+
+  cat_cols = [c for c in X.columns if not pd.api.types.is_numeric_dtype(X[c])]
+  num_cols = [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
+
+  preprocessor = ColumnTransformer(
+    transformers=[
+      ("num", "passthrough", num_cols),
+      ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
+    ],
+    remainder="drop",
+  )
+
+  if model_type == "logistic_regression":
+    task_type = "classification"
+  elif model_type == "linear_regression":
+    task_type = "regression"
+  elif task_type_override in ("classification", "regression"):
+    task_type = task_type_override
+  else:
+    task_type = "regression" if pd.api.types.is_numeric_dtype(y) else "classification"
+
+  if task_type == "classification":
+    le = LabelEncoder()
+    y = pd.Series(le.fit_transform(y), index=y.index, name=y.name)
+
+  hp = hyperparameters or {}
+
+  if model_type == "linear_regression":
+    base_model = LinearRegression()
+  elif model_type == "logistic_regression":
+    penalty = _get_hp(hp, "penalty", "l2")
+    solver = _get_hp(hp, "solver", "lbfgs")
+    if penalty == "l1" and solver not in ("liblinear", "saga"):
+      solver = "liblinear"
+    raw_cw = _get_hp(hp, "class_weight", None)
+    base_model = LogisticRegression(
+      C=float(_get_hp(hp, "C", 1.0)),
+      penalty=penalty,
+      solver=solver,
+      max_iter=int(_get_hp(hp, "max_iter", 1000)),
+      class_weight=raw_cw if raw_cw in ("balanced", None) else None,
+    )
+  elif model_type == "random_forest":
+    raw_cw = _get_hp(hp, "class_weight", None) if task_type == "classification" else None
+    rf_cw = raw_cw if raw_cw in ("balanced", "balanced_subsample") else None
+    base_model = (RandomForestClassifier if task_type == "classification" else RandomForestRegressor)(
+      n_estimators=int(_get_hp(hp, "n_estimators", 100)),
+      max_depth=int(_get_hp(hp, "max_depth", 10)) if _get_hp(hp, "max_depth", None) else None,
+      class_weight=rf_cw,
+      random_state=42,
+    )
+  elif model_type == "xgboost":
+    base_model = (XGBClassifier if task_type == "classification" else XGBRegressor)(
+      n_estimators=int(_get_hp(hp, "n_estimators", 100)),
+      max_depth=int(_get_hp(hp, "max_depth", 6)),
+      learning_rate=float(_get_hp(hp, "learning_rate", 0.1)),
+      scale_pos_weight=float(_get_hp(hp, "scale_pos_weight", 1.0)),
+      eval_metric="logloss" if task_type == "classification" else "rmse",
+      random_state=42,
+      verbosity=0,
+    )
+  else:
+    base_model = (
+      RandomForestClassifier(random_state=42) if task_type == "classification"
+      else RandomForestRegressor(random_state=42)
+    )
+
+  pipe = Pipeline(steps=[("preprocess", preprocessor), ("model", base_model)])
+
+  scoring = "accuracy" if task_type == "classification" else "r2"
+  cv = (
+    StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    if task_type == "classification"
+    else KFold(n_splits=n_splits, shuffle=True, random_state=42)
+  )
+
+  scores = cross_val_score(pipe, X, y, cv=cv, scoring=scoring)
+
+  return {
+    "fold_scores": [round(float(s), 4) for s in scores],
+    "mean_score": round(float(scores.mean()), 4),
+    "std_score": round(float(scores.std()), 4),
+    "n_splits": n_splits,
+    "task_type": task_type,
+    "scoring": scoring,
+    "model_type": model_type,
+  }
