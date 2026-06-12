@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # Local storage (used when STORAGE_PROVIDER=local)
     LOCAL_STORAGE_PATH: str = "./data/uploads"
 
-    # Redis (optional — caching is skipped when blank)
+    # Redis (optional - caching is skipped when blank)
     REDIS_URL: str = ""
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")

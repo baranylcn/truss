@@ -81,8 +81,8 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             <button onClick={() => scrollTo('section-modes')} className="text-sm text-white/50 hover:text-white/80 transition-colors cursor-pointer">
               Documentation
             </button>
-            <button onClick={() => scrollTo('section-pricing')} className="text-sm text-white/50 hover:text-white/80 transition-colors cursor-pointer">
-              Pricing
+            <button onClick={() => scrollTo('section-community')} className="text-sm text-white/50 hover:text-white/80 transition-colors cursor-pointer">
+              Community
             </button>
           </div>
 
@@ -326,28 +326,31 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         </div>
       </section>
 
-      {/* ── SECTION 4 - Pricing ── */}
-      <section id="section-pricing" className="min-h-screen flex flex-col justify-center border-t border-white/[0.06]" style={{ background: '#0d1117' }}>
+      {/* ── SECTION 4 - Community ── */}
+      <section id="section-community" className="min-h-screen flex flex-col justify-center border-t border-white/[0.06]" style={{ background: '#0d1117' }}>
         <div className="max-w-7xl mx-auto px-6 w-full py-16">
           <FadeIn y={20} delay={0}>
+            <p className="text-[10px] font-semibold text-[#f97316] uppercase tracking-[0.25em] text-center mb-4">
+              Open Source
+            </p>
             <h2 className="font-bold text-white text-center mb-2" style={{ fontSize: 'clamp(1.75rem, 3vw, 3rem)' }}>
-              Enterprise-grade pricing
+              Free to use. Forever.
             </h2>
-            <p className="text-sm text-white/40 text-center mb-12">Scale from hobbyist to full-scale enterprise infra.</p>
+            <p className="text-sm text-white/40 text-center mb-12">Self-host, contribute, or deploy - no licences, no vendor lock-in.</p>
           </FadeIn>
 
           <div className="grid grid-cols-3 gap-4 lg:gap-8 max-w-4xl mx-auto">
-            {/* Community */}
+            {/* Self-Host */}
             <FadeIn y={24} delay={0.1}>
               <div className="bg-[#111827] border border-white/[0.08] rounded-lg p-6 flex flex-col h-full">
-                <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-3">Community</p>
+                <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-3">Self-Host</p>
                 <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-4xl font-black text-white">$0</span>
-                  <span className="text-sm text-white/40">/mo</span>
+                  <span className="text-4xl font-black text-white">Local</span>
                 </div>
+                <p className="text-xs text-white/30 mt-1">zero external dependencies</p>
                 <div className="h-px bg-white/[0.06] my-5" />
                 <ul className="space-y-3 flex-1 mb-6">
-                  {['5 Active Pipelines', '1GB Dataset Storage', 'Basic UI Access'].map((f) => (
+                  {['Docker Compose setup', 'Local auth & storage', 'Hot reload dev mode', 'No API keys needed'].map((f) => (
                     <li key={f} className="flex items-center gap-2">
                       <Check size={13} className="text-[#22c55e] flex-shrink-0" />
                       <span className="text-sm text-white/60">{f}</span>
@@ -360,7 +363,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               </div>
             </FadeIn>
 
-            {/* Professional - scale entrance */}
+            {/* Contribute - highlighted */}
             <motion.div
               ref={useRef(null)}
               initial={{ opacity: 0, scale: 0.95 }}
@@ -370,47 +373,49 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             >
               <div className="bg-[#111827] border-2 border-[#f97316] rounded-lg p-6 flex flex-col relative h-full">
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-[#f97316] text-white text-[10px] font-bold uppercase rounded tracking-wide">
-                  Popular
+                  Recommended
                 </div>
-                <p className="text-[10px] font-semibold text-[#f97316] uppercase tracking-widest mb-3">Professional</p>
+                <p className="text-[10px] font-semibold text-[#f97316] uppercase tracking-widest mb-3">Contribute</p>
                 <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-4xl font-black text-white">$49</span>
-                  <span className="text-sm text-white/40">/mo</span>
+                  <span className="text-4xl font-black text-white">Fork</span>
                 </div>
+                <p className="text-xs text-white/30 mt-1">MIT licensed</p>
                 <div className="h-px bg-white/[0.06] my-5" />
                 <ul className="space-y-3 flex-1 mb-6">
-                  {['Unlimited Pipelines', '50GB Dataset Storage', 'GPU Accelerated Training', 'Priority Support'].map((f) => (
+                  {['Submit issues & PRs', 'Node-based visual graph', 'Local-first dev workflow', 'Open roadmap'].map((f) => (
                     <li key={f} className="flex items-center gap-2">
                       <Check size={13} className="text-[#22c55e] flex-shrink-0" />
                       <span className="text-sm text-white/70">{f}</span>
                     </li>
                   ))}
                 </ul>
-                <button onClick={() => onNavigate('register')} className="w-full py-2.5 bg-[#f97316] hover:bg-[#ea6c0a] text-white text-sm font-semibold rounded transition-colors cursor-pointer">
-                  Start Pro Trial
-                </button>
+                <a href="https://github.com/baranylcn/truss" target="_blank" rel="noopener noreferrer" className="w-full py-2.5 bg-[#f97316] hover:bg-[#ea6c0a] text-white text-sm font-semibold rounded transition-colors cursor-pointer flex items-center justify-center gap-2">
+                  <Github size={14} />
+                  View on GitHub
+                </a>
               </div>
             </motion.div>
 
-            {/* Enterprise */}
+            {/* Deploy */}
             <FadeIn y={24} delay={0.3}>
               <div className="bg-[#111827] border border-white/[0.08] rounded-lg p-6 flex flex-col h-full">
-                <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-3">Enterprise</p>
+                <p className="text-[10px] font-semibold text-white/40 uppercase tracking-widest mb-3">Deploy</p>
                 <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-4xl font-black text-white">Custom</span>
+                  <span className="text-4xl font-black text-white">Yours</span>
                 </div>
+                <p className="text-xs text-white/30 mt-1">bring your own infra</p>
                 <div className="h-px bg-white/[0.06] my-5" />
                 <ul className="space-y-3 flex-1 mb-6">
-                  {['Bring Your Own Key', 'On-prem Deployment', 'Custom API Rate Limits', 'SLA Guarantees'].map((f) => (
+                  {['Bring your own database', 'Supabase auth & storage', 'Docker-ready images', 'Env-var configuration'].map((f) => (
                     <li key={f} className="flex items-center gap-2">
                       <Check size={13} className="text-[#22c55e] flex-shrink-0" />
                       <span className="text-sm text-white/60">{f}</span>
                     </li>
                   ))}
                 </ul>
-                <button className="w-full py-2.5 border border-white/[0.12] text-sm text-white/60 hover:text-white hover:border-white/25 rounded transition-colors cursor-pointer">
-                  Contact Sales
-                </button>
+                <a href="#" className="w-full py-2.5 border border-white/[0.12] text-sm text-white/60 hover:text-white hover:border-white/25 rounded transition-colors cursor-pointer flex items-center justify-center">
+                  Read the Docs
+                </a>
               </div>
             </FadeIn>
           </div>
