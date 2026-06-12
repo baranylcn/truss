@@ -1,3 +1,4 @@
+import asyncio
 import gzip
 import base64
 import json
@@ -49,8 +50,11 @@ async def _delete_correlation_keys(project_id: str) -> None:
         await r.delete(*keys)
 
 
-async def set_dataframe(project_id: str, df: pd.DataFrame, ttl: int = 86400) -> None:
-    """Writes a gzip-compressed DataFrame to Redis and invalidates derived caches."""
+async def set_dataframe(project_id: str, df: pd.DataFrame, ttl: int = 86400, *, sync_storage: bool = True) -> None:
+    """Writes a gzip-compressed DataFrame to Redis and invalidates derived caches.
+    When sync_storage=True (default), also fire-and-forgets a Supabase Storage upload so
+    Redis eviction doesn't lose processed data. Pass sync_storage=False when the caller
+    handles the storage write itself (e.g. the initial upload endpoint)."""
     payload = _compress(df.to_json(orient="split"))
     r = get_redis()
     pipe = r.pipeline()
@@ -58,6 +62,10 @@ async def set_dataframe(project_id: str, df: pd.DataFrame, ttl: int = 86400) -> 
     pipe.delete(f"analysis:{project_id}")
     await pipe.execute()
     await _delete_correlation_keys(project_id)
+    if sync_storage:
+        from app.core.storage import upload_dataset
+        csv_bytes = df.to_csv(index=False).encode()
+        asyncio.create_task(upload_dataset(project_id, csv_bytes))
 
 
 async def delete_dataframe(project_id: str) -> None:

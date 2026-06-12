@@ -76,21 +76,24 @@ async def start_training(
 
     sanitized_metrics = sanitize_for_json(metrics)
 
-    result_q = await db.execute(
+    best_q = await db.execute(
         select(TrainedModel).where(
             TrainedModel.project_id == parse_project_id(project_id),
             TrainedModel.is_best == True,  # noqa: E712
         )
     )
-    existing_best = result_q.scalar_one_or_none()
+    existing_bests = list(best_q.scalars().all())
 
-    if existing_best is not None and task_type == "classification":
-        existing_acc = (existing_best.metrics or {}).get("accuracy", 0.0)
-        if sanitized_metrics.get("accuracy", 0.0) > existing_acc:
-            existing_best.is_best = False
-            is_best = True
+    if existing_bests:
+        if task_type == "classification":
+            best_existing = max((m.metrics or {}).get("accuracy", 0.0) for m in existing_bests)
+            is_best = sanitized_metrics.get("accuracy", 0.0) >= best_existing
         else:
-            is_best = False
+            best_existing = max((m.metrics or {}).get("r2", float("-inf")) for m in existing_bests)
+            is_best = sanitized_metrics.get("r2", float("-inf")) >= best_existing
+        if is_best:
+            for m in existing_bests:
+                m.is_best = False
     else:
         is_best = True
 

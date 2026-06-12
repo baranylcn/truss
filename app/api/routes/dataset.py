@@ -66,7 +66,7 @@ async def upload_dataset(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    await set_dataframe(project_id, df)
+    await set_dataframe(project_id, df, sync_storage=False)
     await set_column_tags(project_id, {})
     try:
         await storage_upload(project_id, content)
