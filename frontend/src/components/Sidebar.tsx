@@ -157,7 +157,7 @@ export default function Sidebar({ currentPage, currentStep, onPageChange, onStep
         </nav>
       )}
 
-      {/* Freestyle mode toggle — only in project context */}
+      {/* Freestyle mode toggle - only in project context */}
       {isInProject && onSwitchToFreestyle && (
         <div className="px-3 pb-3 flex-shrink-0">
           <button

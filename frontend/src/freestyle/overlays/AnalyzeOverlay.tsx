@@ -136,7 +136,7 @@ export default function AnalyzeOverlay({ projectId }: Props) {
     if (highMissingCols.length > 0)
       warnings.push(`${highMissingCols.length} column(s) have >30% missing values.`)
     if (catCount > numericCount)
-      warnings.push('More categorical than numeric columns — consider encoding before training.')
+      warnings.push('More categorical than numeric columns - consider encoding before training.')
   }
 
   const focusedCol = columns.find(c => c.column === selectedCol)
@@ -183,7 +183,7 @@ export default function AnalyzeOverlay({ projectId }: Props) {
       <div className="bg-[#111827] border border-[#1e2a3a] rounded-lg overflow-hidden">
         <div className="px-4 py-2.5 border-b border-[#1e2a3a]">
           <p className="text-[10px] font-semibold text-[#4a5568] uppercase tracking-widest">
-            Column Details <span className="normal-case font-normal text-[#374151]">— click a row to visualize</span>
+            Column Details <span className="normal-case font-normal text-[#374151]">- click a row to visualize</span>
           </p>
         </div>
         <div className="overflow-x-auto">

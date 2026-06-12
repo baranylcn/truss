@@ -6,10 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Truss"
     BACKEND_CORS_ORIGINS: Union[List[str], str] = [
-        "https://www.trussplatform.com",
-        "https://trussplatform.com",
         "http://localhost:5173",
-        "http://localhost:3000"
+        "http://localhost:3000",
     ]
 
     DATABASE_URL: str
@@ -17,7 +15,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_JWT_SECRET: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
-    SUPABASE_STORAGE_BUCKET: str = "truss-dataset-storage"
+    SUPABASE_STORAGE_BUCKET: str = ""
 
     REDIS_URL: str = ""
 

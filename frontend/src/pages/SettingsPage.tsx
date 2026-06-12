@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Check } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'profile' | 'plan'>('profile');
-  const [name, setName] = useState('Alex ML');
+  const [name, setName] = useState(user?.user_metadata?.full_name ?? '');
   const [saved, setSaved] = useState(false);
   const [apiKey] = useState('sk-truss-xxxxxxxxxxxxxxxxxxxxxx');
 
@@ -11,6 +13,10 @@ export default function SettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
+
+  const initials = (user?.user_metadata?.full_name ?? user?.email ?? '?')
+    .charAt(0)
+    .toUpperCase();
 
   return (
     <div className="flex-1 flex flex-col animate-fade-in">
@@ -39,11 +45,13 @@ export default function SettingsPage() {
               <div className="bg-[#111827] border border-[#1e2a3a] rounded-lg p-5">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-lg bg-[#1e2a3a] border border-[#2d3748] flex items-center justify-center flex-shrink-0">
-                    <span className="text-lg font-bold text-[#f97316]">A</span>
+                    <span className="text-lg font-bold text-[#f97316]">{initials}</span>
                   </div>
                   <div>
-                    <p className="text-lg font-semibold text-white">Alex ML</p>
-                    <p className="text-sm text-[#64748b]">Machine Learning Architect</p>
+                    <p className="text-lg font-semibold text-white">
+                      {user?.user_metadata?.full_name ?? user?.email}
+                    </p>
+                    <p className="text-sm text-[#64748b]">{user?.email}</p>
                   </div>
                 </div>
               </div>
@@ -63,7 +71,7 @@ export default function SettingsPage() {
                 <label className="text-xs font-medium text-[#94a3b8] block mb-2">Email Address (Read-only)</label>
                 <input
                   type="email"
-                  value="alex@truss.run"
+                  value={user?.email ?? ''}
                   readOnly
                   className="w-full px-4 py-3 bg-[#111827] border border-[#1e2a3a] rounded-lg text-sm text-[#4a5568] cursor-not-allowed"
                 />

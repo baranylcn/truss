@@ -67,7 +67,7 @@ export default function EncodingPanel({ projectId, onApplied }: Props) {
 
         <ModeToggle mode={panelMode} onChange={m => { setPanelMode(m); setColMethods({}) }} />
 
-        {/* Method selector — shown in both modes as the "default" */}
+        {/* Method selector - shown in both modes as the "default" */}
         <Section label={panelMode === 'per_column' ? 'Default Method' : 'Encoding Method'}>
           {METHODS.map(o => (
             <OptionCard key={o.value} selected={method === o.value} label={o.label} desc={o.desc} onClick={() => setMethod(o.value)} />

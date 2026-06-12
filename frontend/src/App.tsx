@@ -84,7 +84,7 @@ export default function App() {
     )
   }
 
-  // Fire-and-forget DB writes — UI never waits for these
+  // Fire-and-forget DB writes - UI never waits for these
   const persistStep = (projectId: string, step: PipelineStep) => {
     projectsApi.update(projectId, { current_step: step }).catch(() => {})
   }
@@ -103,7 +103,7 @@ export default function App() {
     if (activeProjectId) persistStep(activeProjectId, step)
   }
 
-  // Called when opening a project from dashboard/projects list — reads mode/step from project data
+  // Called when opening a project from dashboard/projects list - reads mode/step from project data
   const handleOpenProject = (projectId: string, step: PipelineStep, mode: ViewMode) => {
     setActiveProjectId(projectId)
     setCurrentStep(step)
@@ -170,7 +170,7 @@ export default function App() {
       case 'optimization': return <OptimizationPage projectId={projectId} onNext={handleNext} />
       case 'export': return <ExportPage projectId={projectId} onDashboard={() => handlePageChange('dashboard')} />
       default:
-        // Freestyle-only steps have no guided equivalent — redirect to missing-values
+        // Freestyle-only steps have no guided equivalent - redirect to missing-values
         return <MissingValuesPage projectId={projectId} onNext={handleNext} />
     }
   }

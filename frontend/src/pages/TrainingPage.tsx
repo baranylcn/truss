@@ -131,7 +131,7 @@ export default function TrainingPage({ projectId, onNext }: TrainingPageProps) {
       setTargetCol(defaultTarget)
       setTaskType(inferTaskType(defaultTarget))
     }
-  // inferTaskType reads analyzeData from closure — include it
+  // inferTaskType reads analyzeData from closure - include it
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allColumns])
 

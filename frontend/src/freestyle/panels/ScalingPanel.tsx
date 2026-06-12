@@ -92,7 +92,7 @@ export default function ScalingPanel({ projectId, onApplied }: Props) {
           </p>
         </div>
 
-        {/* Scaler selector — shown in both modes as the "default" */}
+        {/* Scaler selector - shown in both modes as the "default" */}
         <Section label={panelMode === 'per_column' ? 'Default Scaler' : 'Scaler'}>
           {SCALERS.map(o => (
             <OptionCard key={o.value} selected={scaler === o.value} label={o.label} desc={o.desc} onClick={() => setScaler(o.value)} />

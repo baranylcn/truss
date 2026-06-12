@@ -178,7 +178,7 @@ export default function ExportPage({ projectId, onDashboard }: ExportPageProps) 
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-white mb-0.5">Trained Model</p>
-              <p className="text-[11px] text-[#64748b] mb-3">Sklearn pipeline serialized with joblib — ready for deployment.</p>
+              <p className="text-[11px] text-[#64748b] mb-3">Sklearn pipeline serialized with joblib - ready for deployment.</p>
               <button
                 onClick={handleDownloadModel}
                 disabled={loadingModel || !evalData}

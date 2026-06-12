@@ -111,7 +111,7 @@ export default function FreestyleUploadModal({ projectId, onDone, onCancel }: Fr
           {uploadedInfo && previewCols.length > 0 && (
             <div className="animate-fade-in">
               <p className="text-[10px] font-mono text-[#4a5568] uppercase tracking-widest mb-2">
-                Preview — first 7 rows
+                Preview - first 7 rows
               </p>
               <div className="rounded-lg border border-[#1e2a3a] overflow-x-auto">
                 <table className="text-xs w-max min-w-full">

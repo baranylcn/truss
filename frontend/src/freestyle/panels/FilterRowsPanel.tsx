@@ -53,8 +53,8 @@ export default function FilterRowsPanel({ projectId, onApplied }: Props) {
       qc.invalidateQueries({ queryKey: ['pipeline-history', projectId] })
       const newRows = (res as { shape?: [number, number] }).shape?.[0]
       const msg = mode === 'duplicates'
-        ? `Duplicates removed${newRows != null ? ` — ${newRows} rows remain` : ''}`
-        : `Filter applied${newRows != null ? ` — ${newRows} rows remain` : ''}`
+        ? `Duplicates removed${newRows != null ? ` - ${newRows} rows remain` : ''}`
+        : `Filter applied${newRows != null ? ` - ${newRows} rows remain` : ''}`
       toast.success(msg)
       onApplied()
     },

@@ -28,7 +28,7 @@ const CAT_OPTS: { value: CatMethod; label: string }[] = [
   { value: 'bfill', label: 'Backward Fill' },
   { value: 'drop',  label: 'Drop Rows' },
 ]
-// Per-column options split by type — categorical never gets mean/median
+// Per-column options split by type - categorical never gets mean/median
 const NUM_COL_OPTS: { value: ColMethod; label: string }[] = [
   { value: 'none',   label: 'Skip' },
   { value: 'mean',   label: 'Mean' },
@@ -172,7 +172,7 @@ export default function MissingValuesPanel({ projectId, onApplied }: Props) {
         disabled={totalMissing === 0 || allSkipped || constantEmpty}
         disabledHint={
           totalMissing === 0 ? 'No missing values found.' :
-          allSkipped ? 'Both methods set to Skip — select a strategy.' :
+          allSkipped ? 'Both methods set to Skip - select a strategy.' :
           constantEmpty ? 'Enter a fill value for the Constant method.' :
           undefined
         }

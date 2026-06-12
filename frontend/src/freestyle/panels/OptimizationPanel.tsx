@@ -55,7 +55,7 @@ const MODEL_PARAMS: Record<string, HyperParam[]> = {
 }
 
 const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
-  { value: 'random',   label: 'Random Search', desc: 'Samples random combinations — fast and effective.' },
+  { value: 'random',   label: 'Random Search', desc: 'Samples random combinations - fast and effective.' },
   { value: 'grid',     label: 'Grid Search',   desc: 'Systematic sweep over defined ranges.' },
   { value: 'bayesian', label: 'Bayesian',      desc: 'Guided search using prior results.' },
 ]

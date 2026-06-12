@@ -20,9 +20,9 @@ interface FreestyleLayoutProps {
 }
 
 // Step kind system:
-//   operation — drawer only, applies data changes (Missing Values, Encoding, Scaling, Training)
-//   mixed     — drawer for settings, overlay for results (Outliers, Correlation)
-//   view      — overlay only, top bar button (Analyze)
+//   operation - drawer only, applies data changes (Missing Values, Encoding, Scaling, Training)
+//   mixed     - drawer for settings, overlay for results (Outliers, Correlation)
+//   view      - overlay only, top bar button (Analyze)
 
 const DRAWER_STEPS = new Set<PipelineStep>(['missing-values', 'outliers', 'encoding', 'scaling', 'training', 'correlation', 'evaluation', 'optimization', 'export', 'filter-rows', 'feature-engineering', 'feature-selection', 'cross-validate', 'pipeline-history'])
 
@@ -169,7 +169,7 @@ export default function FreestyleLayout({
         onSwitchToGuided={onSwitchToGuided}
       />
 
-      {/* Upload modal — shown until dataset is loaded */}
+      {/* Upload modal - shown until dataset is loaded */}
       {showUpload && (
         <FreestyleUploadModal
           projectId={projectId}

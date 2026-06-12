@@ -75,7 +75,7 @@ export default function CorrelationPanel({ projectId, onComputed }: Props) {
 
         {computeMutation.isSuccess && (
           <p className="text-xs text-[#22c55e] text-center py-1">
-            Matrix computed — see overlay for results.
+            Matrix computed - see overlay for results.
           </p>
         )}
       </div>

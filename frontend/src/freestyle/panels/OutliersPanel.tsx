@@ -165,7 +165,7 @@ export default function OutliersPanel({ projectId, onApplied, onDetected }: Prop
 
         {detected && detected.length > 0 && (
           <p className="text-xs text-[#22c55e] text-center py-1">
-            {detected.length} column(s) affected — see overlay for details.
+            {detected.length} column(s) affected - see overlay for details.
           </p>
         )}
         {detected?.length === 0 && (

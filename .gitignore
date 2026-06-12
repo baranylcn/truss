@@ -1,3 +1,4 @@
+# Logs
 logs
 *.log
 npm-debug.log*
@@ -6,18 +7,45 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Node / Frontend
 node_modules
 dist
 dist-ssr
 *.local
 
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+venv/
+env/
+.venv/
+.mypy_cache/
+.pytest_cache/
+*.pyc
+
+# Environment files - NEVER commit secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Editors
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+*.egg-info/

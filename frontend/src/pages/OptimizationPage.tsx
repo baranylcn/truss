@@ -58,7 +58,7 @@ const MODEL_PARAMS: Record<string, HyperParam[]> = {
 }
 
 const STRATEGIES: { value: Strategy; label: string; description: string }[] = [
-  { value: 'random',   label: 'Random Search',         description: 'Samples random combinations — fast and effective' },
+  { value: 'random',   label: 'Random Search',         description: 'Samples random combinations - fast and effective' },
   { value: 'grid',     label: 'Grid Search',           description: 'Systematic sweep over the defined ranges' },
   { value: 'bayesian', label: 'Bayesian Optimization', description: 'Guided search using prior results' },
 ]
@@ -176,7 +176,7 @@ export default function OptimizationPage({ projectId, onNext }: OptimizationPage
             {numericParams.length > 0 && (
               <div className="bg-[#111827] border border-[#1e2a3a] rounded-lg p-5">
                 <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-widest mb-4">
-                  Numeric Ranges — <span className="text-[#f97316] normal-case font-normal">{modelType}</span>
+                  Numeric Ranges - <span className="text-[#f97316] normal-case font-normal">{modelType}</span>
                 </p>
                 <div className="space-y-3">
                   {numericParams.map(p => {
@@ -213,7 +213,7 @@ export default function OptimizationPage({ projectId, onNext }: OptimizationPage
             {categoricalParams.length > 0 && (
               <div className="bg-[#111827] border border-[#1e2a3a] rounded-lg p-5">
                 <p className="text-[10px] font-semibold text-[#64748b] uppercase tracking-widest mb-4">
-                  Categorical Options — <span className="text-[#f97316] normal-case font-normal">{modelType}</span>
+                  Categorical Options - <span className="text-[#f97316] normal-case font-normal">{modelType}</span>
                 </p>
                 <div className="space-y-4">
                   {categoricalParams.map(p => {
@@ -344,8 +344,8 @@ export default function OptimizationPage({ projectId, onNext }: OptimizationPage
         style={{ left: '220px', right: 0, height: '56px' }}>
         <span className="text-sm text-white/40">
           {result
-            ? `Optimization complete — ${result.trials_run} trials`
-            : evalData ? `Best: ${evalData.best_model} — ${fmt(evalData.accuracy)}` : ''}
+            ? `Optimization complete - ${result.trials_run} trials`
+            : evalData ? `Best: ${evalData.best_model} - ${fmt(evalData.accuracy)}` : ''}
         </span>
         <div className="flex gap-3">
           <button className="px-4 py-1.5 text-sm text-[#94a3b8] hover:text-white">Skip</button>
