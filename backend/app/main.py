@@ -12,11 +12,10 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.AUTH_PROVIDER == "local":
-        from .services.db import engine
-        from .services.models import Base
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+    from .services.db import engine
+    from .services.models import Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     yield
 
 
