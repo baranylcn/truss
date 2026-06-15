@@ -6,7 +6,7 @@ from typing import List
 
 import joblib
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sklearn.model_selection import train_test_split
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -370,20 +370,45 @@ async def cross_validate(
     return cv_result
 
 
+_BATCH_MAX_FILE_SIZE = 100 * 1024 * 1024
+_ALLOWED_CONTENT_TYPES = {
+    "text/csv", "text/plain", "application/csv", "application/octet-stream",
+}
+
+
 @router.post("/batch-predict/{project_id}")
 async def batch_predict(
+    request: Request,
     project_id: str,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     """Accepts a CSV upload, runs best-model predictions on it, and returns a CSV with predictions appended."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in _ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Only CSV files are supported")
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > _BATCH_MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File exceeds 100MB limit")
+        except ValueError:
+            pass
+
     best_model, df_train = await _get_best_model_and_df(project_id, current_user, db)
 
     try:
         contents = await asyncio.wait_for(file.read(), timeout=30)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=408, detail="File upload timed out")
+
+    if len(contents) > _BATCH_MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File exceeds 100MB limit")
 
     try:
         df_new = pd.read_csv(io.BytesIO(contents))

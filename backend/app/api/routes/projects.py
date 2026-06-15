@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import func, select, delete
 
 from app.core.auth import get_current_user
 from app.core.redis import delete_dataframe
@@ -12,6 +12,9 @@ from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from app.utils.uuid_helpers import parse_project_id
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+PROJECT_LIMIT_FREE = 10
+PROJECT_LIMIT_PRO = 100
 
 
 def _assert_owner(project: Project, user: User) -> None:
@@ -38,6 +41,16 @@ async def create_project(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Project:
+    limit = PROJECT_LIMIT_PRO if current_user.plan != "free" else PROJECT_LIMIT_FREE
+    count_result = await db.execute(
+        select(func.count(Project.id)).where(Project.user_id == current_user.id)
+    )
+    if (count_result.scalar() or 0) >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Project limit ({limit}) reached for your plan.",
+        )
+
     project = Project(
         user_id=current_user.id,
         name=body.name,
@@ -47,7 +60,7 @@ async def create_project(
     db.add(project)
     try:
         await db.commit()
-    except DBAPIError as exc:
+    except Exception as exc:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Project could not be created.") from exc
     await db.refresh(project)
