@@ -1,18 +1,35 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from datetime import datetime
+
+PipelineStep = Literal[
+    "upload", "analyze", "missing-values", "outliers", "encoding",
+    "correlation", "scaling", "training", "evaluation", "optimization",
+    "export", "filter-rows", "feature-engineering", "feature-selection",
+    "cross-validate", "pipeline-history",
+]
 
 
 class ProjectCreate(BaseModel):
     name: str
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Project name cannot be empty")
+        if len(v) > 200:
+            raise ValueError("Project name cannot exceed 200 characters")
+        return v
+
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
-    status: Optional[str] = None
-    current_step: Optional[str] = None
-    view_mode: Optional[str] = None
+    status: Optional[Literal["active", "archived", "completed", "failed"]] = None
+    current_step: Optional[PipelineStep] = None
+    view_mode: Optional[Literal["guided", "freestyle"]] = None
 
 
 class ProjectResponse(BaseModel):

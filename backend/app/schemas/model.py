@@ -1,13 +1,16 @@
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 from pydantic import BaseModel
+
+ModelType = Literal["linear_regression", "logistic_regression", "random_forest", "xgboost"]
+TaskType = Literal["classification", "regression"]
 
 
 class TrainRequest(BaseModel):
-  model_type: str
+  model_type: ModelType
   target_column: str
   test_size: float = 0.2
   hyperparameters: dict = {}
-  task_type: Optional[str] = None  # "classification" | "regression" | None (auto-detect)
+  task_type: Optional[TaskType] = None
 
 
 class TrainResponse(BaseModel):
@@ -59,10 +62,10 @@ class OptimizeResponse(BaseModel):
 
 
 class CrossValidateRequest(BaseModel):
-  model_type: str
+  model_type: ModelType
   target_column: str
   n_splits: int = 5
-  task_type: Optional[str] = None
+  task_type: Optional[TaskType] = None
   hyperparameters: dict = {}
 
 
