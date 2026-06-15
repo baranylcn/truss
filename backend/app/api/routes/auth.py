@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -11,6 +11,7 @@ from app.core.auth import (
     verify_password,
 )
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse
 from app.services.db import get_db
 from app.services.models import User
@@ -39,7 +40,9 @@ def _require_local_mode() -> None:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
+@limiter.limit("5/minute")
 async def register(
+    request: Request,
     body: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
@@ -68,7 +71,9 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     body: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:

@@ -1,10 +1,12 @@
 import io
+import uuid
 import asyncio
 import logging
 from functools import partial
 from typing import List
 
 import joblib
+import numpy as np
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -13,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
-from app.core.storage import get_or_restore_dataframe
+from app.core.limiter import limiter
+from app.core.storage import get_or_restore_dataframe, upload_model, download_model
 from app.core.redis import acquire_training_lock, release_training_lock
 from app.services.db import get_db
 from app.services.models import User, Project, TrainedModel
@@ -26,15 +29,39 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/model", tags=["model"])
 
+_BATCH_MAX_FILE_SIZE = 100 * 1024 * 1024
+_ALLOWED_CSV_CONTENT_TYPES = {
+    "text/csv", "text/plain", "application/csv", "application/octet-stream",
+}
+
+
+async def _load_pipeline(best_model: TrainedModel, loop: asyncio.AbstractEventLoop):
+    """Loads the stored pipeline from storage. Falls back to re-training for legacy models."""
+    if best_model.model_path:
+        model_bytes = await download_model(best_model.model_path)
+        if model_bytes is not None:
+            def _deserialize():
+                return joblib.load(io.BytesIO(model_bytes))
+            return await loop.run_in_executor(None, _deserialize)
+        logger.warning(f"Stored model file missing for model {best_model.id}, will re-train")
+
+    # Legacy fallback: model was trained before persistent storage was added
+    raise HTTPException(
+        status_code=409,
+        detail="Stored model not found. Please re-train the model to enable export.",
+    )
+
 
 @router.post("/train/{project_id}", response_model=TrainResponse)
+@limiter.limit("10/hour")
 async def start_training(
+    request: Request,
     project_id: str,
     body: TrainRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """Trains the model synchronously and persists results to the database."""
+    """Trains the model synchronously and persists results and the pipeline to storage."""
     result = await db.execute(
         select(Project).where(
             Project.id == parse_project_id(project_id),
@@ -76,6 +103,22 @@ async def start_training(
 
     sanitized_metrics = sanitize_for_json(metrics)
 
+    # Serialize the trained pipeline and persist it so export/predict don't re-train
+    model_id = uuid.uuid4()
+
+    def _serialize():
+        buf = io.BytesIO()
+        joblib.dump(_pipeline, buf)
+        return buf.getvalue()
+
+    model_bytes = await loop.run_in_executor(None, _serialize)
+    model_stored = False
+    try:
+        await upload_model(str(model_id), model_bytes)
+        model_stored = True
+    except Exception as storage_exc:
+        logger.error(f"Model storage failed for project {project_id}: {storage_exc}")
+
     best_q = await db.execute(
         select(TrainedModel).where(
             TrainedModel.project_id == parse_project_id(project_id),
@@ -98,6 +141,7 @@ async def start_training(
         is_best = True
 
     model_row = TrainedModel(
+        id=model_id,
         project_id=parse_project_id(project_id),
         model_type=body.model_type,
         target_column=body.target_column,
@@ -105,6 +149,7 @@ async def start_training(
         metrics=sanitized_metrics,
         parameters=body.hyperparameters,
         is_best=is_best,
+        model_path=str(model_id) if model_stored else None,
     )
     db.add(model_row)
 
@@ -174,7 +219,9 @@ async def evaluate_model(
 
 
 @router.post("/optimize/{project_id}", response_model=OptimizeResponse)
+@limiter.limit("5/hour")
 async def optimize_model(
+    request: Request,
     project_id: str,
     body: OptimizeRequest,
     current_user: User = Depends(get_current_user),
@@ -211,7 +258,6 @@ async def optimize_model(
     task_type = best_model.task_type
     baseline_score = float((best_model.metrics or {}).get("accuracy") or (best_model.metrics or {}).get("r2") or 0.0)
 
-    # Bayesian falls back to random search (no external dependency required)
     strategy = body.strategy if body.strategy in ("random", "grid") else "random"
 
     try:
@@ -319,7 +365,9 @@ async def class_balance(
 
 
 @router.post("/cross-validate/{project_id}", response_model=CrossValidateResponse)
+@limiter.limit("10/hour")
 async def cross_validate(
+    request: Request,
     project_id: str,
     body: CrossValidateRequest,
     current_user: User = Depends(get_current_user),
@@ -370,12 +418,6 @@ async def cross_validate(
     return cv_result
 
 
-_BATCH_MAX_FILE_SIZE = 100 * 1024 * 1024
-_ALLOWED_CONTENT_TYPES = {
-    "text/csv", "text/plain", "application/csv", "application/octet-stream",
-}
-
-
 @router.post("/batch-predict/{project_id}")
 async def batch_predict(
     request: Request,
@@ -384,12 +426,12 @@ async def batch_predict(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Accepts a CSV upload, runs best-model predictions on it, and returns a CSV with predictions appended."""
+    """Accepts a CSV upload, runs predictions using the stored model, returns CSV with predictions."""
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
     content_type = (file.content_type or "").split(";")[0].strip().lower()
-    if content_type and content_type not in _ALLOWED_CONTENT_TYPES:
+    if content_type and content_type not in _ALLOWED_CSV_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
     content_length = request.headers.get("content-length")
@@ -400,7 +442,7 @@ async def batch_predict(
         except ValueError:
             pass
 
-    best_model, df_train = await _get_best_model_and_df(project_id, current_user, db)
+    best_model, _ = await _get_best_model_and_df(project_id, current_user, db)
 
     try:
         contents = await asyncio.wait_for(file.read(), timeout=30)
@@ -415,16 +457,10 @@ async def batch_predict(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Could not parse CSV: {exc}")
 
+    loop = asyncio.get_running_loop()
+    pipe = await _load_pipeline(best_model, loop)
+
     def _run_predictions():
-        pipe, _, _ = train_model(
-            df=df_train,
-            model_type=best_model.model_type,
-            target_column=best_model.target_column,
-            test_size=0.2,
-            hyperparameters=best_model.parameters or {},
-            task_type_override=best_model.task_type,
-        )
-        import numpy as np
         X_new = df_new.copy()
         if best_model.target_column in X_new.columns:
             X_new = X_new.drop(columns=[best_model.target_column])
@@ -439,7 +475,6 @@ async def batch_predict(
         out.to_csv(buf, index=False)
         return buf.getvalue()
 
-    loop = asyncio.get_running_loop()
     try:
         csv_content = await loop.run_in_executor(None, _run_predictions)
     except Exception as exc:
@@ -460,20 +495,12 @@ async def export_predictions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Re-trains best model, runs inference on test split, returns CSV with actual vs predicted."""
+    """Loads the stored model, runs inference on a test split, returns CSV with actual vs predicted."""
     best_model, df = await _get_best_model_and_df(project_id, current_user, db)
+    loop = asyncio.get_running_loop()
+    pipe = await _load_pipeline(best_model, loop)
 
     def _build_csv():
-        pipe, _, _ = train_model(
-            df=df,
-            model_type=best_model.model_type,
-            target_column=best_model.target_column,
-            test_size=0.2,
-            hyperparameters=best_model.parameters or {},
-            task_type_override=best_model.task_type,
-        )
-        import numpy as np
-        import pandas as pd
         df_clean = df.dropna(subset=[best_model.target_column])
         X = df_clean.drop(columns=[best_model.target_column]).dropna()
         y = df_clean[best_model.target_column].loc[X.index]
@@ -490,7 +517,6 @@ async def export_predictions(
         out.to_csv(buf, index=False)
         return buf.getvalue()
 
-    loop = asyncio.get_running_loop()
     try:
         csv_content = await loop.run_in_executor(None, _build_csv)
     except Exception as exc:
@@ -511,29 +537,31 @@ async def export_model_file(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
-    """Re-trains best model with stored params and returns a joblib-serialized .pkl file."""
-    best_model, df = await _get_best_model_and_df(project_id, current_user, db)
+    """Returns the stored joblib-serialized .pkl file for the best model."""
+    result = await db.execute(
+        select(Project).where(Project.id == parse_project_id(project_id), Project.user_id == current_user.id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    def _build_pkl():
-        pipe, _, _ = train_model(
-            df=df,
-            model_type=best_model.model_type,
-            target_column=best_model.target_column,
-            test_size=0.2,
-            hyperparameters=best_model.parameters or {},
-            task_type_override=best_model.task_type,
+    best_result = await db.execute(
+        select(TrainedModel)
+        .where(TrainedModel.project_id == parse_project_id(project_id), TrainedModel.is_best == True)  # noqa: E712
+        .order_by(TrainedModel.created_at.desc())
+    )
+    best_model = best_result.scalar_one_or_none()
+    if best_model is None:
+        raise HTTPException(status_code=404, detail="No trained model found. Complete the Training step first.")
+
+    if not best_model.model_path:
+        raise HTTPException(
+            status_code=409,
+            detail="Stored model not found. Please re-train the model to enable export.",
         )
-        buf = io.BytesIO()
-        joblib.dump(pipe, buf)
-        buf.seek(0)
-        return buf.read()
 
-    loop = asyncio.get_running_loop()
-    try:
-        model_bytes = await loop.run_in_executor(None, _build_pkl)
-    except Exception as exc:
-        logger.exception(f"Model export failed for project {project_id}")
-        raise HTTPException(status_code=500, detail=f"Export failed: {exc}")
+    model_bytes = await download_model(best_model.model_path)
+    if model_bytes is None:
+        raise HTTPException(status_code=404, detail="Model file not found in storage. Please re-train.")
 
     filename = f"{best_model.model_type}_{project_id[:8]}.pkl"
     return StreamingResponse(

@@ -30,6 +30,7 @@ dependencies = [
 
     # HTTP
     "requests>=2.31.0",
+    "slowapi>=0.1.9",
 
     # ML / Data
     "numpy>=2.4.0",

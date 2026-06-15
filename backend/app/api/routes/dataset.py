@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
+from app.core.limiter import limiter
 from app.core.redis import set_dataframe, get_analysis_cache, set_analysis_cache, set_column_tags
 from app.core.storage import upload_dataset as storage_upload, get_or_restore_dataframe
 from app.services.db import get_db
@@ -51,6 +52,7 @@ def _validate_csv_upload(request: Request, file: UploadFile) -> None:
 
 
 @router.post("/upload", response_model=UploadResponse)
+@limiter.limit("30/hour")
 async def upload_dataset(
     request: Request,
     project_id: str = Form(...),

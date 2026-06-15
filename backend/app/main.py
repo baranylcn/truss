@@ -2,8 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from .core.config import settings
+from .core.limiter import limiter
 from .core.logging import setup_logging
 from .api.routes import dataset, preprocessing, model, health, auth, projects, jobs
 
@@ -24,6 +27,9 @@ async def lifespan(app: FastAPI):
 
 def get_application() -> FastAPI:
     app = FastAPI(title=settings.PROJECT_NAME, version="2.0.0", lifespan=lifespan)
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     if not settings.BACKEND_CORS_ORIGINS:
         raise RuntimeError("BACKEND_CORS_ORIGINS must be set to at least one allowed origin")

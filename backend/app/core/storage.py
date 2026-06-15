@@ -117,6 +117,89 @@ async def _local_delete(project_id: str) -> None:
     await asyncio.to_thread(_run)
 
 
+# Local filesystem — model pkl files
+
+def _local_model_path(model_id: str) -> Path:
+    base = Path(settings.LOCAL_STORAGE_PATH) / "models"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / f"{model_id}.pkl"
+
+
+async def _local_upload_model(model_id: str, content: bytes) -> None:
+    def _run() -> None:
+        _local_model_path(model_id).write_bytes(content)
+
+    await asyncio.to_thread(_run)
+    logger.info(f"Saved model to local storage: {model_id}")
+
+
+async def _local_download_model(model_id: str) -> bytes | None:
+    def _run() -> bytes | None:
+        p = _local_model_path(model_id)
+        return p.read_bytes() if p.exists() else None
+
+    return await asyncio.to_thread(_run)
+
+
+async def _local_delete_model(model_id: str) -> None:
+    def _run() -> None:
+        p = _local_model_path(model_id)
+        if p.exists():
+            p.unlink()
+
+    await asyncio.to_thread(_run)
+
+
+# Supabase Storage — model pkl files
+
+def _supabase_model_url(model_id: str) -> str:
+    return (
+        f"{settings.SUPABASE_URL}/storage/v1/object"
+        f"/{settings.SUPABASE_STORAGE_BUCKET}/models/{model_id}.pkl"
+    )
+
+
+async def _supabase_upload_model(model_id: str, content: bytes) -> None:
+    def _run() -> None:
+        r = requests.post(
+            _supabase_model_url(model_id),
+            data=content,
+            headers={**_supabase_headers(), "Content-Type": "application/octet-stream", "x-upsert": "true"},
+            timeout=_TIMEOUT,
+        )
+        if not r.ok:
+            logger.error(f"Supabase model upload failed {r.status_code}: {r.text}")
+            r.raise_for_status()
+
+    await asyncio.to_thread(_run)
+    logger.info(f"Saved model to Supabase Storage: {model_id}")
+
+
+async def _supabase_download_model(model_id: str) -> bytes | None:
+    def _run() -> bytes | None:
+        r = requests.get(_supabase_model_url(model_id), headers=_supabase_headers(), timeout=_TIMEOUT)
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.content
+
+    return await asyncio.to_thread(_run)
+
+
+async def _supabase_delete_model(model_id: str) -> None:
+    def _run() -> None:
+        r = requests.delete(
+            f"{settings.SUPABASE_URL}/storage/v1/object/{settings.SUPABASE_STORAGE_BUCKET}",
+            json={"prefixes": [f"models/{model_id}.pkl"]},
+            headers=_supabase_headers(),
+            timeout=_TIMEOUT,
+        )
+        if r.status_code not in (200, 404):
+            r.raise_for_status()
+
+    await asyncio.to_thread(_run)
+
+
 # Public API - dispatches based on STORAGE_PROVIDER
 
 async def upload_dataset(project_id: str, content: bytes) -> None:
@@ -137,6 +220,26 @@ async def delete_dataset(project_id: str) -> None:
         await _local_delete(project_id)
     else:
         await _supabase_delete(project_id)
+
+
+async def upload_model(model_id: str, content: bytes) -> None:
+    if settings.STORAGE_PROVIDER == "local":
+        await _local_upload_model(model_id, content)
+    else:
+        await _supabase_upload_model(model_id, content)
+
+
+async def download_model(model_id: str) -> bytes | None:
+    if settings.STORAGE_PROVIDER == "local":
+        return await _local_download_model(model_id)
+    return await _supabase_download_model(model_id)
+
+
+async def delete_model(model_id: str) -> None:
+    if settings.STORAGE_PROVIDER == "local":
+        await _local_delete_model(model_id)
+    else:
+        await _supabase_delete_model(model_id)
 
 
 async def get_or_restore_dataframe(project_id: str) -> pd.DataFrame | None:
