@@ -14,8 +14,11 @@ setup_logging()
 async def lifespan(app: FastAPI):
     from .services.db import engine
     from .services.models import Base
+    from .core.redis import get_redis
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    if settings.REDIS_URL:
+        await get_redis().ping()
     yield
 
 

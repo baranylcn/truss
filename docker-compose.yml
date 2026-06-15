@@ -5,8 +5,8 @@ services:
       POSTGRES_DB: truss
       POSTGRES_USER: truss
       POSTGRES_PASSWORD: truss_dev
-    ports:
-      - "5432:5432"
+    # Ports are intentionally not exposed to the host.
+    # To connect with a local DB client, add "- 5432:5432" here temporarily.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,8 +17,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Ports are intentionally not exposed to the host.
+    # To inspect with redis-cli, add "- 6379:6379" here temporarily.
 
   backend:
     build: ./backend
@@ -28,10 +28,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://truss:truss_dev@postgres:5432/truss
       AUTH_PROVIDER: local
       STORAGE_PROVIDER: local
-      LOCAL_JWT_SECRET: dev-secret-change-in-production
+      LOCAL_JWT_SECRET: docker-compose-dev-only-secret-change-for-production
       LOCAL_STORAGE_PATH: /app/data/uploads
       REDIS_URL: redis://redis:6379
-      BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      BACKEND_CORS_ORIGINS: http://localhost,http://localhost:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,16 +44,13 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_AUTH_PROVIDER: local
+        VITE_API_BASE_URL: http://localhost:8000/api
     ports:
-      - "5173:5173"
-    environment:
-      VITE_AUTH_PROVIDER: local
-      VITE_API_BASE_URL: http://localhost:8000/api
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-      - ./frontend/index.html:/app/index.html
+      - "80:80"
     depends_on:
       - backend
 
