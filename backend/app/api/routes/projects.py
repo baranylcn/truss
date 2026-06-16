@@ -1,3 +1,4 @@
+import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -5,16 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select, delete
 
 from app.core.auth import get_current_user
+from app.core.config import settings
 from app.core.redis import delete_dataframe
+from app.core.storage import delete_dataset, delete_model
 from app.services.db import get_db
-from app.services.models import User, Project
+from app.services.models import User, Project, TrainedModel
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from app.utils.uuid_helpers import parse_project_id
 
-router = APIRouter(prefix="/projects", tags=["projects"])
+logger = logging.getLogger(__name__)
 
-PROJECT_LIMIT_FREE = 10
-PROJECT_LIMIT_PRO = 100
+router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 def _assert_owner(project: Project, user: User) -> None:
@@ -41,14 +43,14 @@ async def create_project(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Project:
-    limit = PROJECT_LIMIT_PRO if current_user.plan != "free" else PROJECT_LIMIT_FREE
+    limit = settings.MAX_PROJECTS_PER_USER
     count_result = await db.execute(
         select(func.count(Project.id)).where(Project.user_id == current_user.id)
     )
     if (count_result.scalar() or 0) >= limit:
         raise HTTPException(
             status_code=403,
-            detail=f"Project limit ({limit}) reached for your plan.",
+            detail=f"Project limit ({limit}) reached.",
         )
 
     project = Project(
@@ -115,13 +117,34 @@ async def delete_project(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Deletes the project and clears its Redis cache."""
+    """Deletes the project, clears its Redis cache, and purges its storage files."""
     result = await db.execute(select(Project).where(Project.id == parse_project_id(project_id)))
     project = result.scalar_one_or_none()
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     _assert_owner(project, current_user)
 
+    # Collect model file paths before the cascade delete removes their rows.
+    model_paths = (
+        await db.execute(
+            select(TrainedModel.model_path).where(TrainedModel.project_id == project.id)
+        )
+    ).scalars().all()
+
     await delete_dataframe(project_id)
+    # Storage cleanup is best-effort: a failure here must not block the DB delete,
+    # otherwise the project becomes undeletable. Orphaned files are logged.
+    try:
+        await delete_dataset(project_id)
+    except Exception as exc:
+        logger.error(f"Dataset storage cleanup failed for project {project_id}: {exc}")
+    for path in model_paths:
+        if not path:
+            continue
+        try:
+            await delete_model(path)
+        except Exception as exc:
+            logger.error(f"Model storage cleanup failed for {path}: {exc}")
+
     await db.execute(delete(Project).where(Project.id == parse_project_id(project_id)))
     await db.commit()

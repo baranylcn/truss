@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.auth import get_current_user
+from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.redis import set_dataframe, get_analysis_cache, set_analysis_cache, set_column_tags
 from app.core.storage import upload_dataset as storage_upload, get_or_restore_dataframe
@@ -23,8 +24,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dataset", tags=["dataset"])
 
-MAX_FILE_SIZE = 100 * 1024 * 1024
-
 _ALLOWED_CONTENT_TYPES = {
     "text/csv",
     "text/plain",
@@ -33,8 +32,8 @@ _ALLOWED_CONTENT_TYPES = {
 }
 
 
-def _validate_csv_upload(request: Request, file: UploadFile) -> None:
-    """Raises HTTPException early if the upload is clearly not a CSV."""
+def _validate_csv_upload(request: Request, file: UploadFile, max_bytes: int) -> None:
+    """Raises HTTPException early if the upload is clearly not a CSV or too large."""
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are supported")
 
@@ -45,8 +44,8 @@ def _validate_csv_upload(request: Request, file: UploadFile) -> None:
     content_length = request.headers.get("content-length")
     if content_length:
         try:
-            if int(content_length) > MAX_FILE_SIZE:
-                raise HTTPException(status_code=413, detail="File exceeds 100MB limit")
+            if int(content_length) > max_bytes:
+                raise HTTPException(status_code=413, detail=f"File exceeds {settings.MAX_UPLOAD_MB}MB limit")
         except ValueError:
             pass
 
@@ -61,11 +60,12 @@ async def upload_dataset(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Parses a CSV upload, stores the DataFrame in Redis, and updates project metadata."""
-    _validate_csv_upload(request, file)
+    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    _validate_csv_upload(request, file, max_bytes)
 
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File exceeds 100MB limit")
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File exceeds {settings.MAX_UPLOAD_MB}MB limit")
     if not content:
         raise HTTPException(status_code=400, detail="File is empty")
 

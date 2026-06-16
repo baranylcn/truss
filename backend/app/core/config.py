@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Redis (optional - caching is skipped when blank)
     REDIS_URL: str = ""
 
+    # Per-user / upload limits. Real production values come from .env (gitignored);
+    # the defaults here are generic and apply equally to every user.
+    MAX_UPLOAD_MB: int = 25
+    MAX_PROJECTS_PER_USER: int = 10
+
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v):
