@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # the defaults here are generic and apply equally to every user.
     MAX_UPLOAD_MB: int = 25
     MAX_PROJECTS_PER_USER: int = 10
+    MAX_STORAGE_MB_PER_USER: int = 100
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

@@ -6,7 +6,7 @@ from functools import partial
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.auth import get_current_user
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.core.storage import upload_dataset as storage_upload, get_or_restore_da
 from app.services.db import get_db
 from app.services.models import User, Project
 from app.services.ml_pipeline import df_to_payload, analyze_dataframe
+from app.services.quotas import storage_would_exceed
 from app.schemas.dataset import UploadResponse, AnalyzeResponse
 from app.utils.json_sanitize import sanitize_for_json
 from app.utils.uuid_helpers import parse_project_id
@@ -93,6 +94,18 @@ async def upload_dataset(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    used_other = await db.scalar(
+        select(func.coalesce(func.sum(Project.size_bytes), 0)).where(
+            Project.user_id == current_user.id,
+            Project.id != project.id,
+        )
+    ) or 0
+    if storage_would_exceed(used_other, len(content), settings.MAX_STORAGE_MB_PER_USER):
+        raise HTTPException(
+            status_code=413,
+            detail=f"Storage limit ({settings.MAX_STORAGE_MB_PER_USER}MB) reached.",
+        )
+
     await set_dataframe(project_id, df, sync_storage=False)
     await set_column_tags(project_id, {})
     try:
@@ -108,6 +121,7 @@ async def upload_dataset(
     project.columns = columns
     project.shape = shape
     project.dtypes = dtypes
+    project.size_bytes = len(content)
     project.current_step = "analyze"
     await db.commit()
 

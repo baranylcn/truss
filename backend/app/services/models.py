@@ -33,6 +33,7 @@ class Project(Base):
     columns = Column(JSON, nullable=True)
     shape = Column(ARRAY(Integer), nullable=True)
     dtypes = Column(JSON, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
 
