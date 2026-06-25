@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isPasswordRecoveryLink } from '../lib/supabase';
 import { authApi } from '../services/api/auth';
 
 const AUTH_PROVIDER = import.meta.env.VITE_AUTH_PROVIDER ?? 'local';
@@ -17,10 +17,13 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  recoveryMode: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
+  exitRecovery: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -82,6 +85,9 @@ function localGetUser(): User | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(
+    AUTH_PROVIDER === 'supabase' && isPasswordRecoveryLink,
+  );
 
   useEffect(() => {
     if (AUTH_PROVIDER === 'local') {
@@ -113,6 +119,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true);
+      }
       if (session?.user) {
         setUser({
           id: session.user.id,
@@ -178,8 +187,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
+  const updatePassword = async (newPassword: string) => {
+    if (AUTH_PROVIDER === 'local') {
+      throw new Error('Password change is not available in local auth mode.');
+    }
+    if (!supabase) throw new Error('Supabase is not configured');
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  };
+
+  const exitRecovery = () => {
+    setRecoveryMode(false);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/');
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, resetPassword }}>
+    <AuthContext.Provider
+      value={{ user, loading, recoveryMode, signUp, signIn, signOut, resetPassword, updatePassword, exitRecovery }}
+    >
       {children}
     </AuthContext.Provider>
   );

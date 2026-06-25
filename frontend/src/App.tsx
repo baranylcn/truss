@@ -22,6 +22,7 @@ import ProjectsPage from './pages/ProjectsPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import UpdatePasswordPage from './pages/UpdatePasswordPage'
 import FreestyleLayout from './freestyle/FreestyleLayout'
 import { projectsApi } from './services/api/projects'
 import type { AppPage, PipelineStep, ViewMode } from './types'
@@ -52,7 +53,7 @@ const FREESTYLE_ONLY_STEPS = new Set<PipelineStep>([
 const STEP_BADGES: Partial<Record<PipelineStep, string>> = {}
 
 export default function App() {
-  const { user, loading } = useAuth()
+  const { user, loading, recoveryMode } = useAuth()
   const [currentPage, setCurrentPage] = useState<AppPage>('dashboard')
   const [currentStep, setCurrentStep] = useState<PipelineStep>('upload')
   const [viewMode, setViewMode] = useState<ViewMode>('guided')
@@ -67,6 +68,15 @@ export default function App() {
           <div className="w-10 h-10 border-3 border-[#f97316] border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-[#64748b]">Loading...</p>
         </div>
+      </div>
+    )
+  }
+
+  // Must precede the `!user` gate: a recovery link establishes a session.
+  if (recoveryMode) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1e] flex flex-col overflow-y-auto">
+        <UpdatePasswordPage onDone={() => setAuthPage('login')} />
       </div>
     )
   }
